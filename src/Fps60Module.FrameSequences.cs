@@ -32,8 +32,8 @@ public unsafe sealed partial class Fps60Module
 
         if (_config.Fmv)
         {
-            ok &= hook_or_log("PhyFMVPlayerManager::UpdateTexture", EngineAddresses.PhyFmvPlayerManagerUpdateTexture,
-                () => new FhMethodHandle<d_fmv_update_texture>(new FhMethodLocation(EngineAddresses.PhyFmvPlayerManagerUpdateTexture, 0)).hook(this, h_fmv_update_texture));
+            ok &= hook_or_log("graphicVideoUpdate", EngineAddresses.GraphicVideoUpdate,
+                () => new FhMethodHandle<d_video_update>(new FhMethodLocation(EngineAddresses.GraphicVideoUpdate, 0)).hook(this, h_video_update));
         }
 
         return ok;
@@ -42,8 +42,8 @@ public unsafe sealed partial class Fps60Module
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_menu_water();
 
-    [UnmanagedFunctionPointer(CallingConvention.ThisCall)]
-    private delegate void d_fmv_update_texture(nint ptr_this);
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate void d_video_update();
 
     /* The main menu water is 69 images composited one per frame, with the current index in a byte.
      * The draw itself advances the index, so the hold is applied afterwards by winding it back on
@@ -62,14 +62,17 @@ public unsafe sealed partial class Fps60Module
     /* The video update loop multiplies its time step by a hardcoded 29.97 and ignores the timer it
      * keeps, so the only lever on a 29.97 source is how often the update runs at all.
      *
+     * The skip belongs here rather than inside the FMV manager. Holding the manager's own texture
+     * update leaves it mid-state and faults during playback, which is what an earlier build did.
+     *
      * This is the hook that has to go once real 60 FPS video ships: with a 59.94 asset the update
      * belongs on every frame, and holding it would halve the video's own framerate. */
-    [UnmanagedCallConv(CallConvs = [typeof(CallConvThiscall)])]
-    private void h_fmv_update_texture(nint ptr_this)
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvStdcall)])]
+    private void h_video_update()
     {
         if (!advance_this_frame()) return;
 
-        new FhMethodHandle<d_fmv_update_texture>(new FhMethodLocation(EngineAddresses.PhyFmvPlayerManagerUpdateTexture, 0))
-            .chain_from(h_fmv_update_texture).fnptr!(ptr_this);
+        new FhMethodHandle<d_video_update>(new FhMethodLocation(EngineAddresses.GraphicVideoUpdate, 0))
+            .chain_from(h_video_update).fnptr!();
     }
 }

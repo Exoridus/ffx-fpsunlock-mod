@@ -116,8 +116,13 @@ public static class EngineAddresses
     /// <summary>graphicDrawMainMenuWaterEffect. One scrolling image per frame.</summary>
     public const nint GraphicDrawMainMenuWaterEffect = 0x23EAD0;
 
-    /// <summary>PhyFMVPlayerManager::UpdateTexture. Thiscall.</summary>
-    public const nint PhyFmvPlayerManagerUpdateTexture = 0x2D77B0;
+    /// <summary>
+    ///     graphicVideoUpdate. Stdcall, no arguments. The video update the FMV path runs per frame,
+    ///     and the one the engine's own developers frameskip to get correct playback speed out of a
+    ///     29.97 source. Preferred over PhyFMVPlayerManager::UpdateTexture (0x2D77B0), which sits
+    ///     deeper in the manager and cannot be skipped without leaving it mid-state.
+    /// </summary>
+    public const nint GraphicVideoUpdate = 0x245FA0;
 
     // --- Globals (RVA, same convention as the hook targets) ---
 
