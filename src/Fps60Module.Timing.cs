@@ -62,6 +62,8 @@ public unsafe sealed partial class Fps60Module
                 () => new FhMethodHandle<d_effect_set_speed>(new FhMethodLocation(EngineAddresses.MsEffectSetSpeed, 0)).hook(this, h_effect_set_speed));
             ok &= hook_or_log("MsSetChrMotionParamF", EngineAddresses.SetMotionParamFloat,
                 () => new FhMethodHandle<d_set_motion_param>(new FhMethodLocation(EngineAddresses.SetMotionParamFloat, 0)).hook(this, h_set_motion_param));
+            ok &= hook_or_log("Ch_TextureSetAnimTimer", EngineAddresses.ChTextureSetAnimTimer,
+                () => new FhMethodHandle<d_set_tex_anim_timer>(new FhMethodLocation(EngineAddresses.ChTextureSetAnimTimer, 0)).hook(this, h_set_tex_anim_timer));
             ok &= hook_or_log("MsSetChrStatInfo", EngineAddresses.MsSetChrStatInfo,
                 () => new FhMethodHandle<d_set_chr_stat>(new FhMethodLocation(EngineAddresses.MsSetChrStatInfo, 0)).hook(this, h_set_chr_stat));
         }
@@ -112,6 +114,9 @@ public unsafe sealed partial class Fps60Module
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_set_chr_stat(uint chr_id, uint stat_id, uint target_id, uint value);
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate void d_set_tex_anim_timer(nint ptr_chr, uint timer);
 
     // --- Handlers ---
 
@@ -258,5 +263,19 @@ public unsafe sealed partial class Fps60Module
 
         new FhMethodHandle<d_set_chr_stat>(new FhMethodLocation(EngineAddresses.MsSetChrStatInfo, 0))
             .chain_from(h_set_chr_stat).fnptr!(chr_id, stat_id, target_id, value);
+    }
+
+    /* The texture animation period, stored as a byte per slot. Scaling it is a real retiming rather
+     * than a frame skip, so animated textures keep every frame they were authored with.
+     *
+     * Clamped to a byte: the store truncates, and a period that wrapped to a small value would run
+     * the animation faster than vanilla instead of slower. */
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvStdcall)])]
+    private void h_set_tex_anim_timer(nint ptr_chr, uint timer)
+    {
+        uint scaled = Math.Min(byte.MaxValue, (uint)Math.Round(timer * Scale));
+
+        new FhMethodHandle<d_set_tex_anim_timer>(new FhMethodLocation(EngineAddresses.ChTextureSetAnimTimer, 0))
+            .chain_from(h_set_tex_anim_timer).fnptr!(ptr_chr, scaled);
     }
 }

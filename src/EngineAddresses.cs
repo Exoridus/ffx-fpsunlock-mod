@@ -185,4 +185,15 @@ public static class EngineAddresses
 
     /// <summary>Ch_TextureAnimSetEnable.</summary>
     public const nint ChTextureAnimSetEnable = 0x430D90;
+
+    /// <summary>
+    ///     Ch_TextureSetAnimTimer(chr, timer). Stdcall. Forwards to tex_anim_timer, which stores a
+    ///     byte per texture animation slot at tex_anim_wk+0xE. It is a period rather than a frame
+    ///     index, so it scales like every other duration in this module.
+    ///
+    ///     Its callers are what identify it: MsCalcMotionSpeed derives it from battle motion speed,
+    ///     which is why animated weapon textures run at double speed for the same reason animations
+    ///     did. The other two are MsBtlBridgeBtl2Event and one magic-side function.
+    /// </summary>
+    public const nint ChTextureSetAnimTimer = 0x43D070;
 }
