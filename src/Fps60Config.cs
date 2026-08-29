@@ -32,8 +32,17 @@ public sealed record Fps60Config
     /// <summary>Retime the battle limit timer.</summary>
     public bool BattleTimers { get; init; } = true;
 
-    /// <summary>Drive the FMV texture update at the real refresh rate. Requires 60 FPS video assets.</summary>
-    public bool Fmv { get; init; }
+    /// <summary>
+    ///     Hold the main menu water animation so its 69 prepared images play at their authored rate.
+    ///     Frame skipping, and therefore 30 Hz inside a 60 Hz game.
+    /// </summary>
+    public bool MenuWater { get; init; } = true;
+
+    /// <summary>
+    ///     Hold the FMV texture update so 29.97 video plays at its authored rate. Frame skipping.
+    ///     Turn this off once the shipped videos are encoded at the target framerate.
+    /// </summary>
+    public bool Fmv { get; init; } = true;
 
     /// <summary>Log measured present rate and frame delta statistics.</summary>
     public bool Telemetry { get; init; } = true;

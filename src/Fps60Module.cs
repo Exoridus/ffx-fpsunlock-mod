@@ -55,11 +55,13 @@ public unsafe sealed partial class Fps60Module : FhModule
 
         ok &= init_timing_hooks();
         ok &= init_battle_hooks();
+        ok &= init_frame_sequence_hooks();
 
         _logger.Info($"[Fps60] Initialized. present={_config.Present} atel={_config.AtelWaits} camera={_config.Camera} " +
                      $"fades={_config.Fades} motion={_config.Motion} battle={_config.BattleTimers}");
-        _logger.Info("[Fps60] Particles, FMV and texture animation are deliberately not hooked. " +
-                     "They will run at double speed until a real 60 Hz solution exists for them.");
+        _logger.Info($"[Fps60] Frame-sequence holds: menu_water={_config.MenuWater} fmv={_config.Fmv}. " +
+                     "These are 30 Hz inside a 60 Hz game by design; the real fix is content at the target rate.");
+        _logger.Info("[Fps60] Particles and texture animation are still unhandled and run at double speed.");
 
         return ok;
     }
