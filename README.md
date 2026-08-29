@@ -9,8 +9,20 @@ logged or fails visibly; it is never masked by halving an update rate.
 
 ## Status
 
-Scaffold. Module lifecycle, per-correction configuration and the patch/restore
-journal exist. No retiming hooks are installed yet.
+First prototype. Builds against Fahrenheit de09538 and installs fifteen hooks:
+the present path, the ATEL frame wait, camera moves, fades, flash, alpha, motion
+and effect speed, the motion parameters, the character stats and the battle
+limit timer. It has not been run against the game yet.
+
+Deliberately not hooked: particles, FMV and texture animation. The existing
+upstream implementation handles those by skipping every second frame, which is
+the 30 FPS behaviour this mod exists to avoid, so they will run at double speed
+until a real solution exists. See `docs/origin-handoff.md` and the knowledge
+base report `docs/forensics/60fps-retiming.md` in `ffx-knowledge-base`.
+
+Known gap in what is hooked: the engine asserts keep-FPS per actor as well as
+globally and offers no getter for the per-actor state, so motion retiming only
+honours the global flag.
 
 ## Layout
 

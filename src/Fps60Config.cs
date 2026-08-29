@@ -15,22 +15,22 @@ public sealed record Fps60Config
     public bool KeepVsyncInterval { get; init; } = true;
 
     /// <summary>Feed the character update a delta derived from the measured present interval.</summary>
-    public bool CharacterDelta { get; init; }
+    public bool CharacterDelta { get; init; } = true;
 
     /// <summary>Scale ATEL frame waits to the active refresh rate.</summary>
-    public bool AtelWaits { get; init; }
+    public bool AtelWaits { get; init; } = true;
 
     /// <summary>Retime camera move durations and accelerations.</summary>
-    public bool Camera { get; init; }
+    public bool Camera { get; init; } = true;
 
     /// <summary>Retime fade, flash and alpha ramps.</summary>
-    public bool Fades { get; init; }
+    public bool Fades { get; init; } = true;
 
     /// <summary>Retime motion and effect speeds.</summary>
-    public bool Motion { get; init; }
+    public bool Motion { get; init; } = true;
 
     /// <summary>Retime the battle limit timer.</summary>
-    public bool BattleTimers { get; init; }
+    public bool BattleTimers { get; init; } = true;
 
     /// <summary>Drive the FMV texture update at the real refresh rate. Requires 60 FPS video assets.</summary>
     public bool Fmv { get; init; }

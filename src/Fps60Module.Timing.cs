@@ -1,0 +1,228 @@
+namespace Fahrenheit.Mods.Fps60;
+
+/// <summary>
+///     Retiming of the systems that express a duration in frames. Each of them takes a frame count or
+///     a speed as an argument, so the correction is a scale applied on the way in.
+/// </summary>
+public unsafe sealed partial class Fps60Module
+{
+    /// <summary>How much longer a frame-expressed duration must be at the current framerate.</summary>
+    private static float Scale => TargetFramerate / 30f;
+
+    private static ushort scale_up(ushort frames) => (ushort)Math.Min(ushort.MaxValue, (int)(frames * Scale));
+    private static uint scale_up(uint frames) => (uint)(frames * Scale);
+    private static ushort scale_down(ushort speed) => (ushort)(speed / Scale);
+
+    private bool init_timing_hooks()
+    {
+        bool ok = true;
+
+        if (_config.CharacterDelta)
+        {
+            ok &= hook_or_log("Ch_CalcMain", EngineAddresses.ChCalcMain,
+                () => new FhMethodHandle<d_ch_calc_main>(new FhMethodLocation(EngineAddresses.ChCalcMain, 0)).hook(this, h_ch_calc_main));
+        }
+
+        if (_config.AtelWaits)
+        {
+            ok &= hook_or_log("ATEL wait init", EngineAddresses.AtelWaitInit,
+                () => new FhMethodHandle<d_atel_wait_init>(new FhMethodLocation(EngineAddresses.AtelWaitInit, 0)).hook(this, h_atel_wait_init));
+        }
+
+        if (_config.Camera)
+        {
+            ok &= hook_or_log("MsCameraMoveFrame", EngineAddresses.MsCameraMoveFrame,
+                () => new FhMethodHandle<d_camera_move_frame>(new FhMethodLocation(EngineAddresses.MsCameraMoveFrame, 0)).hook(this, h_camera_move_frame));
+            ok &= hook_or_log("MsCameraMoveAcc", EngineAddresses.MsCameraMoveAcc,
+                () => new FhMethodHandle<d_camera_move_acc>(new FhMethodLocation(EngineAddresses.MsCameraMoveAcc, 0)).hook(this, h_camera_move_acc));
+        }
+
+        if (_config.Fades)
+        {
+            ok &= hook_or_log("Sg_Fade_Common", EngineAddresses.SgFadeCommon,
+                () => new FhMethodHandle<d_fade_common>(new FhMethodLocation(EngineAddresses.SgFadeCommon, 0)).hook(this, h_fade_common));
+            ok &= hook_or_log("Sg_Flash", EngineAddresses.SgFlash,
+                () => new FhMethodHandle<d_sg_flash>(new FhMethodLocation(EngineAddresses.SgFlash, 0)).hook(this, h_sg_flash));
+            ok &= hook_or_log("Sg_AccSetAlpha", EngineAddresses.SgAccSetAlpha,
+                () => new FhMethodHandle<d_acc_set_alpha>(new FhMethodLocation(EngineAddresses.SgAccSetAlpha, 0)).hook(this, h_acc_set_alpha));
+            ok &= hook_or_log("TkSetFadeOut", EngineAddresses.TkSetFadeOut,
+                () => new FhMethodHandle<d_tk_set_fade_out>(new FhMethodLocation(EngineAddresses.TkSetFadeOut, 0)).hook(this, h_tk_set_fade_out));
+        }
+
+        if (_config.Motion)
+        {
+            ok &= hook_or_log("Ch_SetMotionSpeed", EngineAddresses.ChSetMotionSpeed,
+                () => new FhMethodHandle<d_set_motion_speed>(new FhMethodLocation(EngineAddresses.ChSetMotionSpeed, 0)).hook(this, h_set_motion_speed));
+            ok &= hook_or_log("MsEffectSetSpeed", EngineAddresses.MsEffectSetSpeed,
+                () => new FhMethodHandle<d_effect_set_speed>(new FhMethodLocation(EngineAddresses.MsEffectSetSpeed, 0)).hook(this, h_effect_set_speed));
+            ok &= hook_or_log("MsSetChrMotionParamF", EngineAddresses.SetMotionParamFloat,
+                () => new FhMethodHandle<d_set_motion_param>(new FhMethodLocation(EngineAddresses.SetMotionParamFloat, 0)).hook(this, h_set_motion_param));
+            ok &= hook_or_log("MsSetChrStatInfo", EngineAddresses.MsSetChrStatInfo,
+                () => new FhMethodHandle<d_set_chr_stat>(new FhMethodLocation(EngineAddresses.MsSetChrStatInfo, 0)).hook(this, h_set_chr_stat));
+        }
+
+        return ok;
+    }
+
+    // --- Delegates ---
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void d_ch_calc_main(float delta);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void d_atel_wait_init(nint work, int* storage, nint stack);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int d_atel_pop_int(nint work, nint stack);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void d_camera_move_frame(uint camera_id, uint arg2, uint arg3, uint frames, uint arg5);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void d_camera_move_acc(uint camera_id, uint mode_non_ref, uint mode_polar, uint a4, uint a5, uint a6, uint a7);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void d_fade_common(ushort frames, uint mode_in, uint mode_w);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void d_sg_flash(ushort frames, byte arg2, byte arg3, byte arg4);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void d_acc_set_alpha(ushort alpha, ushort frames);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void d_tk_set_fade_out(uint frames);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void d_set_motion_speed(nint ptr_actor, ushort speed);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void d_effect_set_speed(byte chr_id, ushort speed);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void d_set_motion_param(uint chr_id, uint stat_id, float value);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void d_set_chr_stat(uint chr_id, uint stat_id, uint target_id, uint value);
+
+    // --- Handlers ---
+
+    /* The engine always passes a fixed 0.033373334, one 30 Hz frame. */
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private void h_ch_calc_main(float delta)
+    {
+        new FhMethodHandle<d_ch_calc_main>(new FhMethodLocation(EngineAddresses.ChCalcMain, 0))
+            .chain_from(h_ch_calc_main).fnptr!(1f / TargetFramerate);
+    }
+
+    /* ATEL call target 0000, the frame-based wait. A wait of one frame is an idle loop rather than a
+     * duration, so scaling it would change control flow instead of timing. */
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private void h_atel_wait_init(nint work, int* storage, nint stack)
+    {
+        int frames = new FhMethodHandle<d_atel_pop_int>(new FhMethodLocation(EngineAddresses.AtelPopStackInteger, 0))
+            .fnptr!(work, stack);
+
+        *storage = frames != 1 ? (int)(frames * Scale) : frames;
+    }
+
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private void h_camera_move_frame(uint camera_id, uint arg2, uint arg3, uint frames, uint arg5)
+    {
+        new FhMethodHandle<d_camera_move_frame>(new FhMethodLocation(EngineAddresses.MsCameraMoveFrame, 0))
+            .chain_from(h_camera_move_frame).fnptr!(camera_id, arg2, arg3, scale_up(frames), arg5);
+    }
+
+    /* Whether all four trailing arguments are durations is not established; PWarp scales all four and
+     * the result is reported as correct, so this follows it until something disagrees. */
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private void h_camera_move_acc(uint camera_id, uint mode_non_ref, uint mode_polar, uint a4, uint a5, uint a6, uint a7)
+    {
+        new FhMethodHandle<d_camera_move_acc>(new FhMethodLocation(EngineAddresses.MsCameraMoveAcc, 0))
+            .chain_from(h_camera_move_acc).fnptr!(camera_id, mode_non_ref, mode_polar,
+                scale_up(a4), scale_up(a5), scale_up(a6), scale_up(a7));
+    }
+
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private void h_fade_common(ushort frames, uint mode_in, uint mode_w)
+    {
+        new FhMethodHandle<d_fade_common>(new FhMethodLocation(EngineAddresses.SgFadeCommon, 0))
+            .chain_from(h_fade_common).fnptr!(scale_up(frames), mode_in, mode_w);
+    }
+
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private void h_sg_flash(ushort frames, byte arg2, byte arg3, byte arg4)
+    {
+        new FhMethodHandle<d_sg_flash>(new FhMethodLocation(EngineAddresses.SgFlash, 0))
+            .chain_from(h_sg_flash).fnptr!(scale_up(frames), arg2, arg3, arg4);
+    }
+
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private void h_acc_set_alpha(ushort alpha, ushort frames)
+    {
+        new FhMethodHandle<d_acc_set_alpha>(new FhMethodLocation(EngineAddresses.SgAccSetAlpha, 0))
+            .chain_from(h_acc_set_alpha).fnptr!(alpha, scale_up(frames));
+    }
+
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private void h_tk_set_fade_out(uint frames)
+    {
+        new FhMethodHandle<d_tk_set_fade_out>(new FhMethodLocation(EngineAddresses.TkSetFadeOut, 0))
+            .chain_from(h_tk_set_fade_out).fnptr!(scale_up(frames));
+    }
+
+    /* Animation speed follows motion speed unless keep-FPS is asserted, in which case the engine
+     * already retimes animations off sg_rate and scaling here would slow them twice.
+     *
+     * The engine can also assert keep-FPS per actor, and provides no getter for that state, so this
+     * prototype only honours the global flag. Actors that carry the per-actor flag while the global
+     * one is clear are still retimed and will run at half speed. */
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private void h_set_motion_speed(nint ptr_actor, ushort speed)
+    {
+        if (_sg_keep_fps == 0) speed = scale_down(speed);
+
+        new FhMethodHandle<d_set_motion_speed>(new FhMethodLocation(EngineAddresses.ChSetMotionSpeed, 0))
+            .chain_from(h_set_motion_speed).fnptr!(ptr_actor, speed);
+    }
+
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private void h_effect_set_speed(byte chr_id, ushort speed)
+    {
+        new FhMethodHandle<d_effect_set_speed>(new FhMethodLocation(EngineAddresses.MsEffectSetSpeed, 0))
+            .chain_from(h_effect_set_speed).fnptr!(chr_id, scale_down(speed));
+    }
+
+    /* Only the four run-speed properties are frame-expressed. Ids 0, 1, 2, 7 and 8 are distances,
+     * offsets and a weight; scaling those would move characters, not retime them. */
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private void h_set_motion_param(uint chr_id, uint stat_id, float value)
+    {
+        float scaled = stat_id switch
+        {
+            3 or 4 or 5 or 6 => value / Scale,
+            _                => value
+        };
+
+        new FhMethodHandle<d_set_motion_param>(new FhMethodLocation(EngineAddresses.SetMotionParamFloat, 0))
+            .chain_from(h_set_motion_param).fnptr!(chr_id, stat_id, scaled);
+    }
+
+    /* Speed stats are per-frame rates and shrink; frame-count stats are durations and grow. */
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private void h_set_chr_stat(uint chr_id, uint stat_id, uint target_id, uint value)
+    {
+        value = stat_id switch
+        {
+            ChrStatId.STAT_ATTACK_INC_SPEED or
+            ChrStatId.STAT_ATTACK_DEC_SPEED    => (uint)(value / Scale),
+            ChrStatId.STAT_ATTACK_NORMAL_FRAME or
+            ChrStatId.STAT_ATTACK_NEAR_FRAME   or
+            ChrStatId.STAT_ATTACK_MOTION_FRAME => (uint)(value * Scale),
+            _                                  => value
+        };
+
+        new FhMethodHandle<d_set_chr_stat>(new FhMethodLocation(EngineAddresses.MsSetChrStatInfo, 0))
+            .chain_from(h_set_chr_stat).fnptr!(chr_id, stat_id, target_id, value);
+    }
+}
