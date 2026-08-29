@@ -12,8 +12,18 @@ public static class EngineAddresses
 {
     // --- Present and frame loop ---
 
-    /// <summary>Phyre::PFramework::PApplication::frame. Thiscall. The per-frame entry point.</summary>
-    public const nint PApplicationFrame = 0x227AF0;
+    /// <summary>
+    ///     FFXApplication::animate. Thiscall, returns uint. The game's per-frame entry point: it runs
+    ///     the Steam callbacks, calls updateFFX (which drives the main loop and Sg_MainLoop) and then
+    ///     chains into Phyre::PFramework::PApplication::animate.
+    /// </summary>
+    public const nint FFXApplicationAnimate = 0x2F600;
+
+    /// <summary>
+    ///     updateFFX. Cdecl, takes the frame delta. The main loop body itself; it repeats while
+    ///     gElapsedFrameCount_frameSkip is non-zero without recomputing the delta.
+    /// </summary>
+    public const nint UpdateFFX = 0x4228D0;
 
     /// <summary>Phyre::PFramework::PWindowWin32Base::SetFlipVSyncInterval. Cdecl.</summary>
     public const nint SetFlipVSyncInterval = 0x225250;

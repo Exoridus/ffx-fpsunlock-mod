@@ -39,8 +39,8 @@ public unsafe sealed partial class Fps60Module : FhModule
 
         if (_config.Present)
         {
-            ok &= hook_or_log("PApplication::frame", EngineAddresses.PApplicationFrame,
-                () => new FhMethodHandle<d_frame>(new FhMethodLocation(EngineAddresses.PApplicationFrame, 0)).hook(this, h_frame));
+            ok &= hook_or_log("FFXApplication::animate", EngineAddresses.FFXApplicationAnimate,
+                () => new FhMethodHandle<d_frame>(new FhMethodLocation(EngineAddresses.FFXApplicationAnimate, 0)).hook(this, h_frame));
         }
 
         if (_config.KeepVsyncInterval)
@@ -95,7 +95,7 @@ public unsafe sealed partial class Fps60Module : FhModule
         _frames++;
         if (_config.Telemetry) sample_present_rate();
 
-        return new FhMethodHandle<d_frame>(new FhMethodLocation(EngineAddresses.PApplicationFrame, 0))
+        return new FhMethodHandle<d_frame>(new FhMethodLocation(EngineAddresses.FFXApplicationAnimate, 0))
             .chain_from(h_frame).fnptr!(ptr_this);
     }
 
