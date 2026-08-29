@@ -171,4 +171,18 @@ public static class EngineAddresses
 
     /// <summary>float. Displayed limit time, deliberately jittered in its last digit.</summary>
     public const nint LimitTimerRounded = 0xF3F754;
+
+    // --- Texture animation candidates, survey only ---
+
+    /// <summary>chr_texanim_draw. Dispatches to the old or new per-character texture animation draw.</summary>
+    public const nint ChrTexAnimDraw = 0x37C920;
+
+    /// <summary>screenTextureAnimationDraw.</summary>
+    public const nint ScreenTextureAnimationDraw = 0x50BDB0;
+
+    /// <summary>setMaterialUVScroll. Scrolling UVs rather than a frame sequence.</summary>
+    public const nint SetMaterialUVScroll = 0x2AC9C0;
+
+    /// <summary>Ch_TextureAnimSetEnable.</summary>
+    public const nint ChTextureAnimSetEnable = 0x430D90;
 }

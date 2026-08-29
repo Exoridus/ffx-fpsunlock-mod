@@ -44,6 +44,12 @@ public sealed record Fps60Config
     /// </summary>
     public bool Fmv { get; init; } = true;
 
+    /// <summary>
+    ///     Count calls to the texture animation candidates and report them in the telemetry line.
+    ///     Changes no behaviour; it identifies which function is on the live path.
+    /// </summary>
+    public bool SurveyTextureAnimation { get; init; } = true;
+
     /// <summary>Log measured present rate and frame delta statistics.</summary>
     public bool Telemetry { get; init; } = true;
 
