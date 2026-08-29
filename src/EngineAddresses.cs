@@ -31,6 +31,12 @@ public static class EngineAddresses
     /// <summary>Sg_MainCalcRate. Computes sg_rate from the vertical/horizontal blank ratio each frame.</summary>
     public const nint SgMainCalcRate = 0x4207D0;
 
+    /// <summary>
+    ///     The frame-pacing routine that advances the vertical blank counters. It adds a hardcoded 2
+    ///     to both, which is the engine's assumption of two vertical blanks per 30 Hz frame.
+    /// </summary>
+    public const nint AdvanceVBlankCounters = 0x421F90;
+
     /// <summary>Sg_SetKeepFps. Cdecl, sbyte in/out. There is no matching getter in the engine.</summary>
     public const nint SgSetKeepFps = 0x421C00;
 
@@ -120,6 +126,22 @@ public static class EngineAddresses
 
     /// <summary>uint. Horizontal blank counter; the engine's own frame counter.</summary>
     public const nint SgCount = 0x1FCBBF0;
+
+    /// <summary>
+    ///     uint. Vertical blank counter. Sg_MainCalcRate derives the animation rate from its delta:
+    ///     sg_rate = (sg_vcount - previous) * 0x80, and sg_ratef = sg_rate / 256, so a delta of 2 is
+    ///     the 1.0 that means "one full 30 Hz step".
+    /// </summary>
+    public const nint SgVCount = 0xEFB7A8;
+
+    /// <summary>uint. Second vertical blank counter, advanced in lockstep with the first.</summary>
+    public const nint SgVCount2 = 0xEFB7AC;
+
+    /// <summary>int. Animation rate in 1/256 units; 0x100 is full speed.</summary>
+    public const nint SgRate = 0x1FCBBEC;
+
+    /// <summary>float. sg_rate as a factor; 1.0 is full speed.</summary>
+    public const nint SgRateF = 0x1FCBBE8;
 
     /// <summary>uint. Particle stop request.</summary>
     public const nint PpvUserStopPartF = 0x1F0FD34;

@@ -127,7 +127,8 @@ public unsafe sealed partial class Fps60Module : FhModule
 
         double fps = (_frames - _frames_at_last_sample) / (now - _last_sample).TotalSeconds;
         _logger.Info($"[Fps60] present {fps:F1} fps over the last {(now - _last_sample).TotalSeconds:F1}s, " +
-                     $"vsync_interval={VSyncInterval}, keep_fps={_sg_keep_fps}");
+                     $"vsync_interval={VSyncInterval}, keep_fps={_sg_keep_fps}, " +
+                     $"sg_ratef={FhUtil.get_at<float>(EngineAddresses.SgRateF):F3}");
 
         _frames_at_last_sample = _frames;
         _last_sample = now;

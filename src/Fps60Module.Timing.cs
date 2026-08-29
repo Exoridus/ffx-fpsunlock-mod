@@ -17,6 +17,11 @@ public unsafe sealed partial class Fps60Module
     {
         bool ok = true;
 
+        // Not optional: with the counters left alone every animation runs at double speed,
+        // because the engine derives its animation rate from their delta.
+        ok &= hook_or_log("vertical blank counters", EngineAddresses.AdvanceVBlankCounters,
+            () => new FhMethodHandle<d_advance_vblank>(new FhMethodLocation(EngineAddresses.AdvanceVBlankCounters, 0)).hook(this, h_advance_vblank));
+
         if (_config.CharacterDelta)
         {
             ok &= hook_or_log("Ch_CalcMain", EngineAddresses.ChCalcMain,
@@ -67,6 +72,9 @@ public unsafe sealed partial class Fps60Module
     // --- Delegates ---
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void d_advance_vblank(float arg1);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_ch_calc_main(float delta);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
@@ -106,6 +114,32 @@ public unsafe sealed partial class Fps60Module
     private delegate void d_set_chr_stat(uint chr_id, uint stat_id, uint target_id, uint value);
 
     // --- Handlers ---
+
+    /* The engine advances both vertical blank counters by a hardcoded 2 per frame, its assumption of
+     * two vertical blanks per 30 Hz frame. Sg_MainCalcRate turns their delta into the animation rate
+     * (delta 2 -> sg_ratef 1.0), so at 60 Hz the rate stays at 1.0 and every animation advances a
+     * full 30 Hz step twice as often.
+     *
+     * The increment sits behind menu-loop and screen-state conditions, so the delta is measured
+     * rather than assumed: whatever the original added is rescaled to the actual framerate. */
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private void h_advance_vblank(float arg1)
+    {
+        uint before  = FhUtil.get_at<uint>(EngineAddresses.SgVCount);
+        uint before2 = FhUtil.get_at<uint>(EngineAddresses.SgVCount2);
+
+        new FhMethodHandle<d_advance_vblank>(new FhMethodLocation(EngineAddresses.AdvanceVBlankCounters, 0))
+            .chain_from(h_advance_vblank).fnptr!(arg1);
+
+        uint delta = FhUtil.get_at<uint>(EngineAddresses.SgVCount) - before;
+        if (delta == 0) return;
+
+        // At least one blank per frame, or the rate collapses to zero and animation stops entirely.
+        uint scaled = Math.Max(1u, (uint)Math.Round(delta / Scale));
+
+        FhUtil.set_at(EngineAddresses.SgVCount,  before  + scaled);
+        FhUtil.set_at(EngineAddresses.SgVCount2, before2 + scaled);
+    }
 
     /* The engine always passes a fixed 0.033373334, one 30 Hz frame. */
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
