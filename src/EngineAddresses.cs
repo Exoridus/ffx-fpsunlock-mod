@@ -141,6 +141,18 @@ public static class EngineAddresses
     public const nint PppRunPart = 0x312330;
 
     /// <summary>
+    ///     MsEffectProcess(mode). Stdcall. Mode 0 advances every active effect, mode 1 draws them,
+    ///     and both dispatch into the magic overlay DLL through the table at +0xc and +0x10 - which
+    ///     is why no function in FFX.exe carries the effect's own timeline.
+    ///
+    ///     The advance is called once per presented frame regardless of how many simulation steps
+    ///     the frame ran: inside the Sg_GetCurExecFrames loop when there is at least one, and again
+    ///     in the iVar4 == 0 branch when there is none. At 60 Hz that is twice the rate the effects
+    ///     were authored for.
+    /// </summary>
+    public const nint MsEffectProcess = 0x387EC0;
+
+    /// <summary>
     ///     The old-format character texture animation advance. Dispatched per slot from
     ///     FUN_0077c9c0 on descriptor byte 2; the new format goes to FUN_0077f450 instead.
     ///     Its counters are literal increments - a sprite step of +1 per call and a blink

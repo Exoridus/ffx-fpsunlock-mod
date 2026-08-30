@@ -81,6 +81,22 @@ public sealed record Fps60Config
     public bool ParticleHold { get; init; }
 
     /// <summary>
+    ///     Hold the effect advance on skipped frames, leaving the effect draw on every frame.
+    ///
+    ///     MsEffectProcess(0) advances, MsEffectProcess(1) draws, and the engine calls the advance
+    ///     once per presented frame whether or not the frame ran a simulation step. Holding only the
+    ///     advance is the one lever here that cannot flicker, because nothing about drawing changes.
+    /// </summary>
+    public bool EffectHold { get; init; }
+
+    /// <summary>
+    ///     Attach the MsEffectProcess hook and count advance and draw calls without holding
+    ///     anything. Separates the two failure modes: a hook that the game cannot survive at all,
+    ///     and a hold the overlay's state machine cannot survive.
+    /// </summary>
+    public bool EffectProbe { get; init; }
+
+    /// <summary>
     ///     Overwrite the hardcoded 29.97 the video update loop multiplies its time step by
     ///     (a double in .rdata at 0x74A180). Null leaves it alone.
     ///
