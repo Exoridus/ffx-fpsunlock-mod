@@ -11,7 +11,13 @@ public unsafe sealed partial class Fps60Module
 
     private static ushort scale_up(ushort frames) => (ushort)Math.Min(ushort.MaxValue, (int)(frames * Scale));
     private static uint scale_up(uint frames) => (uint)(frames * Scale);
-    private static ushort scale_down(ushort speed) => (ushort)(speed / Scale);
+    /// <summary>
+    ///     Halves a speed, never to zero. A motion speed of 0 does not advance at all, so rounding a
+    ///     small non-zero speed away stalls whatever waits for that motion to finish - which is how
+    ///     a cutscene ends up hanging rather than merely running at the wrong rate.
+    /// </summary>
+    private static ushort scale_down(ushort speed)
+        => speed == 0 ? (ushort)0 : (ushort)Math.Max(1, (int)(speed / Scale));
 
     /// <summary>Actor flags. Bit 0x100000 marks an actor whose motion advance the engine scales itself.</summary>
     private const int ActorFlagsOffset = 0x194;
@@ -20,11 +26,22 @@ public unsafe sealed partial class Fps60Module
     /// <summary>
     ///     True when the engine applies sg_rate to this actor's motion advance on its own, in which
     ///     case scaling the speed on the way in would correct it twice.
+    ///
+    ///     The advance at 0x00838d10 guards that multiplication with both KEEP_FPS and the actor's
+    ///     own flag 0x100000, which reads as "an actor without the flag is never corrected, so the
+    ///     module must correct it". Measured 2026-08-30, acting on that made things worse: a cutscene
+    ///     ran at half speed and then stalled outright. Something else corrects those actors too, and
+    ///     until that is found the decision stays on KEEP_FPS alone. <see cref="Fps60Config.MotionPerActor"/>
+    ///     turns the per-actor rule back on for the next attempt.
     /// </summary>
     private bool engine_corrects_motion(nint ptr_actor)
-        => KeepFps != 0
-        && ptr_actor != 0
-        && (*(uint*)(ptr_actor + ActorFlagsOffset) & ActorFlagEngineScaledMotion) != 0;
+    {
+        if (KeepFps == 0) return false;
+        if (!_config.MotionPerActor) return true;
+
+        return ptr_actor != 0
+            && (*(uint*)(ptr_actor + ActorFlagsOffset) & ActorFlagEngineScaledMotion) != 0;
+    }
 
     private bool init_timing_hooks()
     {

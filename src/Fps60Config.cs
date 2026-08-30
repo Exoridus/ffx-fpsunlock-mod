@@ -29,6 +29,13 @@ public sealed record Fps60Config
     /// <summary>Retime motion and effect speeds.</summary>
     public bool Motion { get; init; } = true;
 
+    /// <summary>
+    ///     Decide the motion scale per actor rather than on KEEP_FPS alone, using the actor flag
+    ///     0x100000 that gates the engine's own sg_rate correction. Off: acting on that flag made a
+    ///     cutscene run at half speed and then stall, so the reading is incomplete.
+    /// </summary>
+    public bool MotionPerActor { get; init; }
+
     /// <summary>Retime the battle limit timer.</summary>
     public bool BattleTimers { get; init; } = true;
 
