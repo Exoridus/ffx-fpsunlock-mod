@@ -29,6 +29,8 @@ public unsafe sealed partial class Fps60Module
 
     private long _part_starts;
     private long _part_held;
+    private long _part_runs;
+    private long _part_loops;
     private long _part_rescaled;
     private int  _part_step_observed;
 
@@ -42,12 +44,17 @@ public unsafe sealed partial class Fps60Module
         ok &= hook_or_log("pppPartLoop", EngineAddresses.PppPartLoop,
             () => new FhMethodHandle<d_ppp_part_loop>(new FhMethodLocation(EngineAddresses.PppPartLoop, 0)).hook(this, h_ppp_part_loop));
 
+        {
+            ok &= hook_or_log("_pppRunPart", EngineAddresses.PppRunPart,
+                () => new FhMethodHandle<d_ppp_run_part>(new FhMethodLocation(EngineAddresses.PppRunPart, 0)).hook(this, h_ppp_run_part));
+        }
+
         return ok;
     }
 
     private string particle_counts()
-        => $"part_starts={_part_starts} part_rescaled={_part_rescaled} part_held={_part_held} " +
-           $"part_step=0x{_part_step_observed:X}";
+        => $"part_starts={_part_starts} part_runs={_part_runs} part_loops={_part_loops} " +
+           $"part_rescaled={_part_rescaled} part_held={_part_held} part_step=0x{_part_step_observed:X}";
 
     /* The hold and the step scaling are alternatives, not layers. Holding halves how often the
      * pass runs; scaling the step on top of that would stretch every lifetime to twice its wall
@@ -63,6 +70,9 @@ public unsafe sealed partial class Fps60Module
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_ppp_part_loop();
 
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate uint d_ppp_run_part(nint manager, byte mode);
+
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     private void h_ppp_start_part(nint manager, int time_step, nint data, int flags)
     {
@@ -76,17 +86,34 @@ public unsafe sealed partial class Fps60Module
     /* The broadcast runs inside this call, so the correction has to come after it. Only a step that
      * still equals the global is rewritten: that makes the pass idempotent (a step this module
      * already scaled no longer matches) and leaves the magic path's own steps alone. */
+    /* The hold sits here rather than on pppPartLoop. Measured 2026-08-30: holding the loop on every
+     * second frame ran 30 skips a second, exactly half of 60, and changed nothing about how fast
+     * particles moved - because the loop is one of eight callers of this function and the cutscene
+     * path is not among them. This is the choke point they all pass through.
+     *
+     * A held frame returns 0. The callers read the result as "this manager is finished" and tear it
+     * down when it is non-zero, so 0 is the answer that says nothing happened. */
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
-    private void h_ppp_part_loop()
+    private uint h_ppp_run_part(nint manager, byte mode)
     {
-        /* The hold skips the pass outright rather than shortening it, because the pass advances
-         * particles once per call whatever its accumulator says. Skipping the draw with it is the
-         * known risk, and the counter is what tells the two apart afterwards. */
+        _part_runs++;
+
         if (_config.ParticleHold && !advance_this_frame())
         {
             _part_held++;
-            return;
+            return 0;
         }
+
+        var orig = new FhMethodHandle<d_ppp_run_part>(new FhMethodLocation(EngineAddresses.PppRunPart, 0))
+            .chain_from(h_ppp_run_part).fnptr;
+
+        return orig is null ? 0 : orig(manager, mode);
+    }
+
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private void h_ppp_part_loop()
+    {
+        _part_loops++;
 
         new FhMethodHandle<d_ppp_part_loop>(new FhMethodLocation(EngineAddresses.PppPartLoop, 0))
             .chain_from(h_ppp_part_loop).fnptr?.Invoke();

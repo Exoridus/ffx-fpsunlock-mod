@@ -27,7 +27,10 @@ public unsafe sealed partial class Fps60Module : FhModule
 
     public override bool init(FhModContext mod_context, FileStream global_state_file)
     {
-        _config = Fps60Config.Load(Path.Combine(AppContext.BaseDirectory, "fhfps60.config.json"));
+        string config_path = Fps60Config.ResolvePath();
+        bool   config_found = File.Exists(config_path);
+
+        _config = Fps60Config.Load(config_path);
 
         // The engine has no shutdown callback, so the restore is bound to process exit.
         AppDomain.CurrentDomain.ProcessExit += (_, _) => _patches.RestoreAll();
@@ -60,12 +63,19 @@ public unsafe sealed partial class Fps60Module : FhModule
         ok &= init_particle_hooks();
         ok &= init_survey_hooks();
 
+        // Said first and unconditionally: a config that was looked for in the wrong directory
+        // reads as a run with every default, and nothing else in this log distinguishes the two.
+        _logger.Info(config_found
+            ? $"[Fps60] Config read from {config_path}."
+            : $"[Fps60] No config at {config_path} - every setting is at its default.");
         _logger.Info($"[Fps60] Initialized. present={_config.Present} atel={_config.AtelWaits} camera={_config.Camera} " +
                      $"fades={_config.Fades} motion={_config.Motion} battle={_config.BattleTimers}");
         _logger.Info($"[Fps60] Frame-sequence holds: menu_water={_config.MenuWater} fmv={_config.Fmv} " +
                      $"texture_animation={_config.TextureAnimation}. These are 30 Hz inside a 60 Hz game by " +
                      "design; the real fix is content at the target rate.");
-        _logger.Info($"[Fps60] Particles retimed by scaling the manager time step: particles={_config.Particles}.");
+        _logger.Info(_config.ParticleHold
+            ? $"[Fps60] Particles held on skipped frames: particle_hold={_config.ParticleHold}, step scaling off."
+            : $"[Fps60] Particles retimed by scaling the manager time step: particles={_config.Particles}.");
 
         return ok;
     }

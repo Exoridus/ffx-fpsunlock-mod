@@ -107,4 +107,21 @@ public sealed record Fps60Config
         if (!File.Exists(path)) return new Fps60Config();
         return JsonSerializer.Deserialize<Fps60Config>(File.ReadAllText(path)) ?? new Fps60Config();
     }
+
+    /// <summary>
+    ///     Where the config actually sits, which is beside this assembly in the mod's own
+    ///     directory. AppContext.BaseDirectory is the host's bin directory, not the mod's, so a
+    ///     config written next to the DLL was silently never read and every run took the defaults.
+    /// </summary>
+    public static string ResolvePath()
+    {
+        var assembly = typeof(Fps60Config).Assembly.Location;
+
+        if (!string.IsNullOrEmpty(assembly) && Path.GetDirectoryName(assembly) is { Length: > 0 } dir)
+            return Path.Combine(dir, FileName);
+
+        return Path.Combine(AppContext.BaseDirectory, FileName);
+    }
+
+    public const string FileName = "fhfps60.config.json";
 }

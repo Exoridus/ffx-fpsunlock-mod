@@ -134,6 +134,13 @@ public static class EngineAddresses
     public const nint PppPartLoop = 0x362330;
 
     /// <summary>
+    ///     _pppRunPart(manager, mode). Cdecl, returns a status. The single choke point of the
+    ///     particle advance: pppPartLoop is only one of its eight callers, and the cutscene and
+    ///     battle paths reach it without going through the loop at all.
+    /// </summary>
+    public const nint PppRunPart = 0x312330;
+
+    /// <summary>
     ///     The old-format character texture animation advance. Dispatched per slot from
     ///     FUN_0077c9c0 on descriptor byte 2; the new format goes to FUN_0077f450 instead.
     ///     Its counters are literal increments - a sprite step of +1 per call and a blink
