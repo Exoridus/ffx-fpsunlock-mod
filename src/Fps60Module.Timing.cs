@@ -13,6 +13,19 @@ public unsafe sealed partial class Fps60Module
     private static uint scale_up(uint frames) => (uint)(frames * Scale);
     private static ushort scale_down(ushort speed) => (ushort)(speed / Scale);
 
+    /// <summary>Actor flags. Bit 0x100000 marks an actor whose motion advance the engine scales itself.</summary>
+    private const int ActorFlagsOffset = 0x194;
+    private const uint ActorFlagEngineScaledMotion = 0x100000;
+
+    /// <summary>
+    ///     True when the engine applies sg_rate to this actor's motion advance on its own, in which
+    ///     case scaling the speed on the way in would correct it twice.
+    /// </summary>
+    private bool engine_corrects_motion(nint ptr_actor)
+        => KeepFps != 0
+        && ptr_actor != 0
+        && (*(uint*)(ptr_actor + ActorFlagsOffset) & ActorFlagEngineScaledMotion) != 0;
+
     private bool init_timing_hooks()
     {
         bool ok = true;
@@ -217,9 +230,14 @@ public unsafe sealed partial class Fps60Module
      * prototype only honours the global flag. Actors that carry the per-actor flag while the global
      * one is clear are still retimed and will run at half speed. */
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    /* KEEP_FPS alone does not mean the engine corrects the actor. The motion advance computes
+     * (speed * factor >> 8) * scale / 0x1e00 and only then, guarded by BOTH Sg_GetKeepFps() and the
+     * actor's own flag 0x100000 at +0x194, multiplies by sg_rate. An actor without that flag is
+     * never corrected by the engine, so skipping the scale on the global flag alone left it running
+     * at double speed - which is what put the field NPCs out of step while Tidus was right. */
     private void h_set_motion_speed(nint ptr_actor, ushort speed)
     {
-        if (_sg_keep_fps == 0) speed = scale_down(speed);
+        if (!engine_corrects_motion(ptr_actor)) speed = scale_down(speed);
 
         new FhMethodHandle<d_set_motion_speed>(new FhMethodLocation(EngineAddresses.ChSetMotionSpeed, 0))
             .chain_from(h_set_motion_speed).fnptr!(ptr_actor, speed);

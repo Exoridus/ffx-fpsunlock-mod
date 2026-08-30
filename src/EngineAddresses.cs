@@ -43,6 +43,12 @@ public static class EngineAddresses
     /// <summary>Sg_GetKeepFps.</summary>
     public const nint SgGetKeepFps = 0x4206B0;
 
+    /// <summary>
+    ///     sbyte. The KEEP_FPS flag itself, which Sg_GetKeepFps returns. Read directly rather than
+    ///     mirrored through the setter, so a write this module does not see cannot desynchronise it.
+    /// </summary>
+    public const nint SgKeepFps = 0xEFBBEC;
+
     // --- Character and motion ---
 
     /// <summary>Ch_CalcMain(float delta). The engine passes a fixed delta of 0.033373334.</summary>
@@ -122,12 +128,25 @@ public static class EngineAddresses
     public const nint PppStartPart = 0x3124A0;
 
     /// <summary>
+    ///     pppPartLoop. Runs every active manager and calls pppDataRcv at its end, which is where the
+    ///     broadcast lives that writes the global step into every manager's +0x10.
+    /// </summary>
+    public const nint PppPartLoop = 0x362330;
+
+    /// <summary>
     ///     The old-format character texture animation advance. Dispatched per slot from
     ///     FUN_0077c9c0 on descriptor byte 2; the new format goes to FUN_0077f450 instead.
     ///     Its counters are literal increments - a sprite step of +1 per call and a blink
     ///     countdown of rand() % 0x5a + 0x3c - so it carries nothing to scale.
     /// </summary>
     public const nint ChrTexAnimAdvanceOld = 0x37FFD0;
+
+    /// <summary>
+    ///     The per-slot texture animation advance dispatcher. Reads the slot's format byte out of
+    ///     tex_anim_wk and calls the old advance for 0 and the new one for 1, so hooking it is what
+    ///     says which format the characters on screen are actually using.
+    /// </summary>
+    public const nint ChrTexAnimAdvance = 0x37C9C0;
 
     /// <summary>graphicDrawMainMenuWaterEffect. One scrolling image per frame.</summary>
     public const nint GraphicDrawMainMenuWaterEffect = 0x23EAD0;
@@ -166,6 +185,27 @@ public static class EngineAddresses
 
     /// <summary>uint. Particle stop request.</summary>
     public const nint PpvUserStopPartF = 0x1F0FD34;
+
+    /// <summary>
+    ///     int. The global particle time step, in the same fixed-point units as each manager's
+    ///     accumulator. Zero in the image and written at runtime; observed as 0x1000.
+    /// </summary>
+    public const nint PpvPartTimeStep = 0x94B7DC;
+
+    /// <summary>int. Number of active particle managers.</summary>
+    public const nint PpvPartManagerCount = 0x94B4B8;
+
+    /// <summary>Particle manager array. Stride 0x80; the time step is at +0x10 of each entry.</summary>
+    public const nint PpvPartManagers = 0x94E380;
+
+    /// <summary>uint. Non-zero while an FMV is playing.</summary>
+    public const nint GMoviePlay = 0xD2A008;
+
+    /// <summary>
+    ///     tex_anim_wk. One 0x30-byte slot per character texture animation, CHR_TEX_ANIM_MAX = 64.
+    ///     Byte 0 of a slot is the format the descriptor selected: 0 old, 1 new.
+    /// </summary>
+    public const nint TexAnimWk = 0x1F10000;
 
     /// <summary>byte, 0..69. Current frame of the main menu water animation.</summary>
     public const nint MenuWaterFrame = 0x8CBA09;

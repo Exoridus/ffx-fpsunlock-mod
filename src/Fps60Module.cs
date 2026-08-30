@@ -13,11 +13,8 @@ public unsafe sealed partial class Fps60Module : FhModule
     private readonly PatchJournal _patches = new();
     private Fps60Config _config = new();
 
-    /// <summary>
-    ///     Mirror of the engine's global keep-FPS flag. The engine has no getter for it, so the only
-    ///     way to know its state is to watch every write.
-    /// </summary>
-    private sbyte _sg_keep_fps;
+    /// <summary>The engine's KEEP_FPS flag, read where it lives.</summary>
+    private static sbyte KeepFps => FhUtil.get_at<sbyte>(EngineAddresses.SgKeepFps);
 
     /// <summary>Target framerate divisor: the engine runs at 60 / this. 1 is 60 FPS, 2 is 30.</summary>
     private static uint VSyncInterval
@@ -48,10 +45,6 @@ public unsafe sealed partial class Fps60Module : FhModule
             ok &= hook_or_log("SetFlipVSyncInterval", EngineAddresses.SetFlipVSyncInterval,
                 () => new FhMethodHandle<d_set_vsync>(new FhMethodLocation(EngineAddresses.SetFlipVSyncInterval, 0)).hook(this, h_set_vsync));
         }
-
-        // Always tracked: several corrections below are conditional on it.
-        ok &= hook_or_log("Sg_SetKeepFps", EngineAddresses.SgSetKeepFps,
-            () => new FhMethodHandle<d_sg_set_keep_fps>(new FhMethodLocation(EngineAddresses.SgSetKeepFps, 0)).hook(this, h_sg_set_keep_fps));
 
         if (_config.VideoTargetFramerate is { } fps)
         {
@@ -96,9 +89,6 @@ public unsafe sealed partial class Fps60Module : FhModule
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_set_vsync(uint interval);
 
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate sbyte d_sg_set_keep_fps(sbyte keep);
-
     /* The engine retimes its own display loop off the flip vsync interval. Setting it to 1 rather
      * than 2 is what actually produces 60 FPS; everything else in this module compensates for it. */
     [UnmanagedCallConv(CallConvs = [typeof(CallConvThiscall)])]
@@ -117,15 +107,6 @@ public unsafe sealed partial class Fps60Module : FhModule
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     private void h_set_vsync(uint interval) { }
 
-    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
-    private sbyte h_sg_set_keep_fps(sbyte keep)
-    {
-        _sg_keep_fps = keep;
-
-        return new FhMethodHandle<d_sg_set_keep_fps>(new FhMethodLocation(EngineAddresses.SgSetKeepFps, 0))
-            .chain_from(h_sg_set_keep_fps).fnptr!(keep);
-    }
-
     // --- Telemetry ---
 
     private long _frames;
@@ -140,7 +121,7 @@ public unsafe sealed partial class Fps60Module : FhModule
 
         double fps = (_frames - _frames_at_last_sample) / (now - _last_sample).TotalSeconds;
         _logger.Info($"[Fps60] present {fps:F1} fps over the last {(now - _last_sample).TotalSeconds:F1}s, " +
-                     $"vsync_interval={VSyncInterval}, keep_fps={_sg_keep_fps}, " +
+                     $"vsync_interval={VSyncInterval}, keep_fps={KeepFps}, " +
                      $"sg_ratef={FhUtil.get_at<float>(EngineAddresses.SgRateF):F3}, " +
                      $"{particle_counts()}, {survey_counts()}");
 
