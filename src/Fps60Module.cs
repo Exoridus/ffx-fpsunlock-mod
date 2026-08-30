@@ -53,16 +53,26 @@ public unsafe sealed partial class Fps60Module : FhModule
         ok &= hook_or_log("Sg_SetKeepFps", EngineAddresses.SgSetKeepFps,
             () => new FhMethodHandle<d_sg_set_keep_fps>(new FhMethodLocation(EngineAddresses.SgSetKeepFps, 0)).hook(this, h_sg_set_keep_fps));
 
+        if (_config.VideoTargetFramerate is { } fps)
+        {
+            // .rdata, so PatchJournal's VirtualProtect window is what makes it writable; the
+            // journal also puts the original 29.97 back on process exit.
+            _patches.Write(EngineAddresses.TextureVideoTargetFramerate, BitConverter.GetBytes(fps));
+            _logger.Info($"[Fps60] Video target framerate patched to {fps} at 0x{EngineAddresses.TextureVideoTargetFramerate:X}.");
+        }
+
         ok &= init_timing_hooks();
         ok &= init_battle_hooks();
         ok &= init_frame_sequence_hooks();
+        ok &= init_particle_hooks();
         ok &= init_survey_hooks();
 
         _logger.Info($"[Fps60] Initialized. present={_config.Present} atel={_config.AtelWaits} camera={_config.Camera} " +
                      $"fades={_config.Fades} motion={_config.Motion} battle={_config.BattleTimers}");
-        _logger.Info($"[Fps60] Frame-sequence holds: menu_water={_config.MenuWater} fmv={_config.Fmv}. " +
-                     "These are 30 Hz inside a 60 Hz game by design; the real fix is content at the target rate.");
-        _logger.Info("[Fps60] Particles and texture animation are still unhandled and run at double speed.");
+        _logger.Info($"[Fps60] Frame-sequence holds: menu_water={_config.MenuWater} fmv={_config.Fmv} " +
+                     $"texture_animation={_config.TextureAnimation}. These are 30 Hz inside a 60 Hz game by " +
+                     "design; the real fix is content at the target rate.");
+        _logger.Info($"[Fps60] Particles retimed by scaling the manager time step: particles={_config.Particles}.");
 
         return ok;
     }
@@ -131,7 +141,8 @@ public unsafe sealed partial class Fps60Module : FhModule
         double fps = (_frames - _frames_at_last_sample) / (now - _last_sample).TotalSeconds;
         _logger.Info($"[Fps60] present {fps:F1} fps over the last {(now - _last_sample).TotalSeconds:F1}s, " +
                      $"vsync_interval={VSyncInterval}, keep_fps={_sg_keep_fps}, " +
-                     $"sg_ratef={FhUtil.get_at<float>(EngineAddresses.SgRateF):F3}, {survey_counts()}");
+                     $"sg_ratef={FhUtil.get_at<float>(EngineAddresses.SgRateF):F3}, " +
+                     $"{particle_counts()}, {survey_counts()}");
 
         _frames_at_last_sample = _frames;
         _last_sample = now;

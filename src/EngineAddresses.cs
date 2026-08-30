@@ -113,6 +113,22 @@ public static class EngineAddresses
     /// <summary>pppFpStopStatus. Particle timing is self-driven, so particles are stopped rather than retimed.</summary>
     public const nint PppFpStopStatus = 0x32A840;
 
+    /// <summary>
+    ///     _pppStartPart(manager, time_step, data, flags). Cdecl. Starts one particle manager and
+    ///     writes time_step into its +0x10, which _pppRunPart adds to the accumulator at +0x08 every
+    ///     frame. It is the only place a manager's step is set, and it is where every source of a
+    ///     step converges: the global ppv step, and the literal 0x1000 the magic path passes.
+    /// </summary>
+    public const nint PppStartPart = 0x3124A0;
+
+    /// <summary>
+    ///     The old-format character texture animation advance. Dispatched per slot from
+    ///     FUN_0077c9c0 on descriptor byte 2; the new format goes to FUN_0077f450 instead.
+    ///     Its counters are literal increments - a sprite step of +1 per call and a blink
+    ///     countdown of rand() % 0x5a + 0x3c - so it carries nothing to scale.
+    /// </summary>
+    public const nint ChrTexAnimAdvanceOld = 0x37FFD0;
+
     /// <summary>graphicDrawMainMenuWaterEffect. One scrolling image per frame.</summary>
     public const nint GraphicDrawMainMenuWaterEffect = 0x23EAD0;
 

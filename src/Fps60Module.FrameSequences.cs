@@ -36,6 +36,12 @@ public unsafe sealed partial class Fps60Module
                 () => new FhMethodHandle<d_video_update>(new FhMethodLocation(EngineAddresses.GraphicVideoUpdate, 0)).hook(this, h_video_update));
         }
 
+        if (_config.TextureAnimation)
+        {
+            ok &= hook_or_log("old-format texture animation advance", EngineAddresses.ChrTexAnimAdvanceOld,
+                () => new FhMethodHandle<d_texanim_advance_old>(new FhMethodLocation(EngineAddresses.ChrTexAnimAdvanceOld, 0)).hook(this, h_texanim_advance_old));
+        }
+
         return ok;
     }
 
@@ -44,6 +50,9 @@ public unsafe sealed partial class Fps60Module
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     private delegate void d_video_update();
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void d_texanim_advance_old(int slot);
 
     /* The main menu water is 69 images composited one per frame, with the current index in a byte.
      * The draw itself advances the index, so the hold is applied afterwards by winding it back on
@@ -74,5 +83,22 @@ public unsafe sealed partial class Fps60Module
 
         new FhMethodHandle<d_video_update>(new FhMethodLocation(EngineAddresses.GraphicVideoUpdate, 0))
             .chain_from(h_video_update).fnptr!();
+    }
+
+    /* The engine carries two texture animation formats side by side and picks one per character on
+     * byte 2 of the descriptor. The new format's advance takes its step from Ch_TextureSetAnimTimer,
+     * which this module already retimes; this is the old one, and its counters are literal - the
+     * sprite step is +1 per call and the blink countdown is rand() % 0x5a + 0x3c ticked down by one.
+     * Nothing in it can be scaled, so the call itself is held instead.
+     *
+     * 445 of 872 character model directories ship without the new format's asset, so this is not a
+     * rare path. */
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private void h_texanim_advance_old(int slot)
+    {
+        if (!advance_this_frame()) return;
+
+        new FhMethodHandle<d_texanim_advance_old>(new FhMethodLocation(EngineAddresses.ChrTexAnimAdvanceOld, 0))
+            .chain_from(h_texanim_advance_old).fnptr?.Invoke(slot);
     }
 }
