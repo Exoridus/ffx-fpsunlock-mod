@@ -19,7 +19,9 @@ public unsafe sealed partial class Fps60Module
     {
         if (!_config.SurveyTextureAnimation) return true;
 
-        // Failures are not fatal here: a probe that will not attach is itself a result.
+        // Failures are not fatal here: a probe that will not attach is itself a result. That has to
+        // hold at call time too - a chain that does not resolve leaves fnptr null, and a counting
+        // probe must never be the thing that ends the process.
         new FhMethodHandle<d_texanim_draw>(new FhMethodLocation(EngineAddresses.ChrTexAnimDraw, 0)).hook(this, h_texanim_draw);
         new FhMethodHandle<d_screen_texanim_draw>(new FhMethodLocation(EngineAddresses.ScreenTextureAnimationDraw, 0)).hook(this, h_screen_texanim_draw);
         new FhMethodHandle<d_uv_scroll>(new FhMethodLocation(EngineAddresses.SetMaterialUVScroll, 0)).hook(this, h_uv_scroll);
@@ -36,8 +38,12 @@ public unsafe sealed partial class Fps60Module
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int d_texanim_draw(int index, int arg2);
 
+    // Three int parameters, read off the decompiled body at 0x0090bdb0: it indexes a table with
+    // param_2 * 0x720 + param_1 + param_3 * 0x1c and formats a texture id from what it finds. The
+    // probe used to declare it with none, so chaining called the original with three garbage stack
+    // values - which is where the boot-video crashes came from.
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate void d_screen_texanim_draw();
+    private delegate void d_screen_texanim_draw(int table, int bank, int index);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_uv_scroll(nint arg1, float arg2, float arg3);
@@ -49,16 +55,17 @@ public unsafe sealed partial class Fps60Module
     private int h_texanim_draw(int index, int arg2)
     {
         _texanim_draw++;
-        return new FhMethodHandle<d_texanim_draw>(new FhMethodLocation(EngineAddresses.ChrTexAnimDraw, 0))
-            .chain_from(h_texanim_draw).fnptr!(index, arg2);
+        var orig = new FhMethodHandle<d_texanim_draw>(new FhMethodLocation(EngineAddresses.ChrTexAnimDraw, 0))
+            .chain_from(h_texanim_draw).fnptr;
+        return orig is null ? 0 : orig(index, arg2);
     }
 
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
-    private void h_screen_texanim_draw()
+    private void h_screen_texanim_draw(int table, int bank, int index)
     {
         _screen_texanim_draw++;
         new FhMethodHandle<d_screen_texanim_draw>(new FhMethodLocation(EngineAddresses.ScreenTextureAnimationDraw, 0))
-            .chain_from(h_screen_texanim_draw).fnptr!();
+            .chain_from(h_screen_texanim_draw).fnptr?.Invoke(table, bank, index);
     }
 
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
@@ -66,7 +73,7 @@ public unsafe sealed partial class Fps60Module
     {
         _uv_scroll++;
         new FhMethodHandle<d_uv_scroll>(new FhMethodLocation(EngineAddresses.SetMaterialUVScroll, 0))
-            .chain_from(h_uv_scroll).fnptr!(arg1, arg2, arg3);
+            .chain_from(h_uv_scroll).fnptr?.Invoke(arg1, arg2, arg3);
     }
 
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
@@ -74,6 +81,6 @@ public unsafe sealed partial class Fps60Module
     {
         _texanim_set_enable++;
         new FhMethodHandle<d_texanim_set_enable>(new FhMethodLocation(EngineAddresses.ChTextureAnimSetEnable, 0))
-            .chain_from(h_texanim_set_enable).fnptr!(arg1, arg2);
+            .chain_from(h_texanim_set_enable).fnptr?.Invoke(arg1, arg2);
     }
 }
