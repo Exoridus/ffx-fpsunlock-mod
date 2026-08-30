@@ -14,11 +14,11 @@ public unsafe sealed partial class Fps60Module
     private long _screen_texanim_draw;
     private long _uv_scroll;
     private long _texanim_set_enable;
-    private long _texanim_advance;
-
     /// <summary>
     ///     Calls that reached the old format's advance. Counted in the hold that hooks it rather than
-    ///     by reading the format byte, which is not a readable global of this image.
+    ///     at the dispatcher: the dispatcher is declared with one parameter and its single caller
+    ///     passes three, so a one-argument chain leaves the original reading two garbage stack slots.
+    ///     That faulted twice, both times on the fourth boot splash.
     /// </summary>
     private long _texanim_advance_old_path;
 
@@ -39,8 +39,6 @@ public unsafe sealed partial class Fps60Module
             () => new FhMethodHandle<d_uv_scroll>(new FhMethodLocation(EngineAddresses.SetMaterialUVScroll, 0)).hook(this, h_uv_scroll));
         probe("Ch_TextureAnimSetEnable", EngineAddresses.ChTextureAnimSetEnable,
             () => new FhMethodHandle<d_texanim_set_enable>(new FhMethodLocation(EngineAddresses.ChTextureAnimSetEnable, 0)).hook(this, h_texanim_set_enable));
-        probe("texture animation advance dispatcher", EngineAddresses.ChrTexAnimAdvance,
-            () => new FhMethodHandle<d_texanim_advance>(new FhMethodLocation(EngineAddresses.ChrTexAnimAdvance, 0)).hook(this, h_texanim_advance));
 
         _logger.Info("[Fps60] Texture animation survey armed; counts appear in the telemetry line.");
         return true;
@@ -54,8 +52,7 @@ public unsafe sealed partial class Fps60Module
     private string survey_counts()
         => $"texanim_draw={_texanim_draw} screen_texanim={_screen_texanim_draw} " +
            $"uv_scroll={_uv_scroll} texanim_enable={_texanim_set_enable} " +
-           $"advance={_texanim_advance} advance_old={_texanim_advance_old_path} " +
-           $"advance_new={_texanim_advance - _texanim_advance_old_path}";
+           $"advance_old={_texanim_advance_old_path}";
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int d_texanim_draw(int index, int arg2);
@@ -106,19 +103,4 @@ public unsafe sealed partial class Fps60Module
             .chain_from(h_texanim_set_enable).fnptr?.Invoke(arg1, arg2);
     }
 
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate void d_texanim_advance(int slot);
-
-    /* Total dispatcher calls. The split by format is not read out of tex_anim_wk: the addresses the
-     * decompilation shows for it (0x0231xxxx) are past the end of .data and are not a global of this
-     * image at all, and a probe that read there faulted on its first call. The old path is counted
-     * where it is already hooked, in the hold, so the new path is the difference. */
-    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
-    private void h_texanim_advance(int slot)
-    {
-        _texanim_advance++;
-
-        new FhMethodHandle<d_texanim_advance>(new FhMethodLocation(EngineAddresses.ChrTexAnimAdvance, 0))
-            .chain_from(h_texanim_advance).fnptr?.Invoke(slot);
-    }
 }

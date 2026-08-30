@@ -141,13 +141,6 @@ public static class EngineAddresses
     /// </summary>
     public const nint ChrTexAnimAdvanceOld = 0x37FFD0;
 
-    /// <summary>
-    ///     The per-slot texture animation advance dispatcher. Reads the slot's format byte out of
-    ///     tex_anim_wk and calls the old advance for 0 and the new one for 1, so hooking it is what
-    ///     says which format the characters on screen are actually using.
-    /// </summary>
-    public const nint ChrTexAnimAdvance = 0x37C9C0;
-
     /// <summary>graphicDrawMainMenuWaterEffect. One scrolling image per frame.</summary>
     public const nint GraphicDrawMainMenuWaterEffect = 0x23EAD0;
 
