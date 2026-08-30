@@ -67,6 +67,20 @@ public sealed record Fps60Config
     public bool Particles { get; init; } = true;
 
     /// <summary>
+    ///     Hold the particle manager pass instead of scaling its time step, skipping it on the
+    ///     frames a 30 Hz sequence would not have advanced.
+    ///
+    ///     An experiment, off by default, and the only lever consistent with what the step
+    ///     scaling measured: pppRunPartStd runs once per call to _pppRunPart, before and
+    ///     independently of the accumulator update, so particle motion follows how often the pass
+    ///     runs rather than how large its step is. At 60 Hz it simply runs twice as often.
+    ///
+    ///     The risk is that the same call builds the draw packet, in which case particles are not
+    ///     drawn on the held frames and flicker. That is what this flag exists to find out.
+    /// </summary>
+    public bool ParticleHold { get; init; }
+
+    /// <summary>
     ///     Overwrite the hardcoded 29.97 the video update loop multiplies its time step by
     ///     (a double in .rdata at 0x74A180). Null leaves it alone.
     ///
