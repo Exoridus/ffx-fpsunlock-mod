@@ -4,13 +4,18 @@ namespace Fahrenheit.Mods.Fps60;
 ///     Records the original bytes of every in-process patch so shutdown can restore
 ///     the image exactly. Restoring in reverse order matters: two patches may overlap
 ///     when one widens an instruction the other rewrote.
+///
+///     Addresses are RVAs, the same convention <see cref="EngineAddresses"/> and FhUtil use.
+///     The image base is added here; passing an absolute address would write outside the image.
 /// </summary>
 public sealed unsafe class PatchJournal
 {
     private readonly List<(nint Address, byte[] Original)> _entries = new();
 
-    public void Write(nint address, ReadOnlySpan<byte> replacement)
+    public void Write(nint rva, ReadOnlySpan<byte> replacement)
     {
+        nint address = (nint)FhUtil.ptr_at<byte>(rva);
+
         byte[] original = new byte[replacement.Length];
         new Span<byte>((void*)address, replacement.Length).CopyTo(original);
 
