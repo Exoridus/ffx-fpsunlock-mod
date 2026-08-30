@@ -54,8 +54,11 @@ public unsafe sealed partial class Fps60Module
            $"uv_scroll={_uv_scroll} texanim_enable={_texanim_set_enable} " +
            $"advance_old={_texanim_advance_old_path}";
 
+    // Three int parameters, not the two the export declares. Both call sites, at :972567 and
+    // :972591, pass a third; the body forwards it into chr_texanim_draw_sub_old/_new, whose own
+    // arguments the decompiler lost. Chaining with two left that third read off stack garbage.
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate int d_texanim_draw(int index, int arg2);
+    private delegate int d_texanim_draw(int index, int arg2, int arg3);
 
     // Three int parameters, read off the decompiled body at 0x0090bdb0: it indexes a table with
     // param_2 * 0x720 + param_1 + param_3 * 0x1c and formats a texture id from what it finds. The
@@ -71,12 +74,12 @@ public unsafe sealed partial class Fps60Module
     private delegate void d_texanim_set_enable(uint arg1, uint arg2);
 
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
-    private int h_texanim_draw(int index, int arg2)
+    private int h_texanim_draw(int index, int arg2, int arg3)
     {
         _texanim_draw++;
         var orig = new FhMethodHandle<d_texanim_draw>(new FhMethodLocation(EngineAddresses.ChrTexAnimDraw, 0))
             .chain_from(h_texanim_draw).fnptr;
-        return orig is null ? 0 : orig(index, arg2);
+        return orig is null ? 0 : orig(index, arg2, arg3);
     }
 
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
