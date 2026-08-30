@@ -96,6 +96,8 @@ public unsafe sealed partial class Fps60Module
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     private void h_texanim_advance_old(int slot)
     {
+        _texanim_advance_old_path++;
+
         if (!advance_this_frame()) return;
 
         new FhMethodHandle<d_texanim_advance_old>(new FhMethodLocation(EngineAddresses.ChrTexAnimAdvanceOld, 0))

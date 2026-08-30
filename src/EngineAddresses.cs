@@ -201,12 +201,6 @@ public static class EngineAddresses
     /// <summary>uint. Non-zero while an FMV is playing.</summary>
     public const nint GMoviePlay = 0xD2A008;
 
-    /// <summary>
-    ///     tex_anim_wk. One 0x30-byte slot per character texture animation, CHR_TEX_ANIM_MAX = 64.
-    ///     Byte 0 of a slot is the format the descriptor selected: 0 old, 1 new.
-    /// </summary>
-    public const nint TexAnimWk = 0x1F10000;
-
     /// <summary>byte, 0..69. Current frame of the main menu water animation.</summary>
     public const nint MenuWaterFrame = 0x8CBA09;
 

@@ -10,14 +10,17 @@ namespace Fahrenheit.Mods.Fps60;
 /// </summary>
 public unsafe sealed partial class Fps60Module
 {
-    private const int TexAnimSlotStride = 0x30;
-
     private long _texanim_draw;
     private long _screen_texanim_draw;
     private long _uv_scroll;
     private long _texanim_set_enable;
-    private long _texanim_advance_old;
-    private long _texanim_advance_new;
+    private long _texanim_advance;
+
+    /// <summary>
+    ///     Calls that reached the old format's advance. Counted in the hold that hooks it rather than
+    ///     by reading the format byte, which is not a readable global of this image.
+    /// </summary>
+    private long _texanim_advance_old_path;
 
     private bool init_survey_hooks()
     {
@@ -51,7 +54,8 @@ public unsafe sealed partial class Fps60Module
     private string survey_counts()
         => $"texanim_draw={_texanim_draw} screen_texanim={_screen_texanim_draw} " +
            $"uv_scroll={_uv_scroll} texanim_enable={_texanim_set_enable} " +
-           $"advance_old={_texanim_advance_old} advance_new={_texanim_advance_new}";
+           $"advance={_texanim_advance} advance_old={_texanim_advance_old_path} " +
+           $"advance_new={_texanim_advance - _texanim_advance_old_path}";
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int d_texanim_draw(int index, int arg2);
@@ -105,19 +109,14 @@ public unsafe sealed partial class Fps60Module
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_texanim_advance(int slot);
 
-    /* The dispatcher reads the slot's format byte out of tex_anim_wk and calls the old advance for 0
-     * and the new one for 1. Counting per format here is what says which implementation the
-     * characters on screen are on - the two are retimed differently, and the older probes counted
-     * the draw side, where one of them turned out never to attach at all. */
+    /* Total dispatcher calls. The split by format is not read out of tex_anim_wk: the addresses the
+     * decompilation shows for it (0x0231xxxx) are past the end of .data and are not a global of this
+     * image at all, and a probe that read there faulted on its first call. The old path is counted
+     * where it is already hooked, in the hold, so the new path is the difference. */
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     private void h_texanim_advance(int slot)
     {
-        if (slot >= 0)
-        {
-            byte format = *(FhUtil.ptr_at<byte>(EngineAddresses.TexAnimWk) + slot * TexAnimSlotStride);
-            if (format == 0) _texanim_advance_old++;
-            else if (format == 1) _texanim_advance_new++;
-        }
+        _texanim_advance++;
 
         new FhMethodHandle<d_texanim_advance>(new FhMethodLocation(EngineAddresses.ChrTexAnimAdvance, 0))
             .chain_from(h_texanim_advance).fnptr?.Invoke(slot);
