@@ -30,13 +30,15 @@ public unsafe sealed partial class Fps60Module
     private long _part_starts;
     private long _part_held;
     private long _part_runs;
+    private long _fp_runs;
+    private long _fp_held;
     private long _part_loops;
     private long _part_rescaled;
     private int  _part_step_observed;
 
     private bool init_particle_hooks()
     {
-        if (!_config.Particles && !_config.ParticleHold) return true;
+        if (!_config.Particles && !_config.ParticleHold && !_config.FieldParticleHold) return true;
 
         bool ok = hook_or_log("_pppStartPart", EngineAddresses.PppStartPart,
             () => new FhMethodHandle<d_ppp_start_part>(new FhMethodLocation(EngineAddresses.PppStartPart, 0)).hook(this, h_ppp_start_part));
@@ -45,6 +47,9 @@ public unsafe sealed partial class Fps60Module
             () => new FhMethodHandle<d_ppp_part_loop>(new FhMethodLocation(EngineAddresses.PppPartLoop, 0)).hook(this, h_ppp_part_loop));
 
         {
+            ok &= hook_or_log("_pppRunPartFp", EngineAddresses.PppRunPartFp,
+                () => new FhMethodHandle<d_ppp_run_part_fp>(new FhMethodLocation(EngineAddresses.PppRunPartFp, 0)).hook(this, h_ppp_run_part_fp));
+
             ok &= hook_or_log("_pppRunPart", EngineAddresses.PppRunPart,
                 () => new FhMethodHandle<d_ppp_run_part>(new FhMethodLocation(EngineAddresses.PppRunPart, 0)).hook(this, h_ppp_run_part));
         }
@@ -54,7 +59,8 @@ public unsafe sealed partial class Fps60Module
 
     private string particle_counts()
         => $"part_starts={_part_starts} part_runs={_part_runs} part_loops={_part_loops} " +
-           $"part_rescaled={_part_rescaled} part_held={_part_held} part_step=0x{_part_step_observed:X}";
+           $"part_rescaled={_part_rescaled} part_held={_part_held} fp_runs={_fp_runs} " +
+           $"fp_held={_fp_held} part_step=0x{_part_step_observed:X}";
 
     /* The hold and the step scaling are alternatives, not layers. Holding halves how often the
      * pass runs; scaling the step on top of that would stretch every lifetime to twice its wall
@@ -72,6 +78,9 @@ public unsafe sealed partial class Fps60Module
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate uint d_ppp_run_part(nint manager, byte mode);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate uint d_ppp_run_part_fp(nint manager, uint mode);
 
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     private void h_ppp_start_part(nint manager, int time_step, nint data, int flags)
@@ -106,6 +115,25 @@ public unsafe sealed partial class Fps60Module
 
         var orig = new FhMethodHandle<d_ppp_run_part>(new FhMethodLocation(EngineAddresses.PppRunPart, 0))
             .chain_from(h_ppp_run_part).fnptr;
+
+        return orig is null ? 0 : orig(manager, mode);
+    }
+
+    /* The field half. A held frame returns 0 for the same reason the battle half does: pppFpLoop
+     * frees the group and restarts it when the result is non-zero. */
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private uint h_ppp_run_part_fp(nint manager, uint mode)
+    {
+        _fp_runs++;
+
+        if (_config.FieldParticleHold && !advance_this_frame())
+        {
+            _fp_held++;
+            return 0;
+        }
+
+        var orig = new FhMethodHandle<d_ppp_run_part_fp>(new FhMethodLocation(EngineAddresses.PppRunPartFp, 0))
+            .chain_from(h_ppp_run_part_fp).fnptr;
 
         return orig is null ? 0 : orig(manager, mode);
     }

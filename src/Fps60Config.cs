@@ -97,6 +97,16 @@ public sealed record Fps60Config
     public bool EffectProbe { get; init; }
 
     /// <summary>
+    ///     Hold the field particle advance on skipped frames. This is the half a cutscene uses:
+    ///     yiCallFieldParticle calls pppFpLoop, which advances each group through _pppRunPartFp.
+    ///
+    ///     Whether it flickers is the question it exists to answer. The packet counter pppFpLoop
+    ///     checks after its loop grows inside the advance, so the draw may well be built there too,
+    ///     in which case held frames draw nothing.
+    /// </summary>
+    public bool FieldParticleHold { get; init; }
+
+    /// <summary>
     ///     Overwrite the hardcoded 29.97 the video update loop multiplies its time step by
     ///     (a double in .rdata at 0x74A180). Null leaves it alone.
     ///

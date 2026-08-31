@@ -141,6 +141,13 @@ public static class EngineAddresses
     public const nint PppRunPart = 0x312330;
 
     /// <summary>
+    ///     _pppRunPartFp(manager, mode). Cdecl, returns a status. The field half of the particle
+    ///     system, reached from pppFpLoop by way of yiCallFieldParticle. A cutscene's particles go
+    ///     through this and never through _pppRunPart.
+    /// </summary>
+    public const nint PppRunPartFp = 0x3123D0;
+
+    /// <summary>
     ///     MsEffectProcess(mode). Stdcall. Mode 0 advances every active effect, mode 1 draws them,
     ///     and both dispatch into the magic overlay DLL through the table at +0xc and +0x10 - which
     ///     is why no function in FFX.exe carries the effect's own timeline.
