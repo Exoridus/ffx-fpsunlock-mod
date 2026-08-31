@@ -141,6 +141,18 @@ public sealed record Fps60Config
     public bool EventClockOnVblank { get; init; }
 
     /// <summary>
+    ///     Count how the per-actor motion advance classifies the actors a scene runs, without
+    ///     changing anything.
+    ///
+    ///     Its rate correction is gated on the actor's flag 0x100000, and nothing in the
+    ///     decompilation ever sets that bit - the only place it appears for this field is
+    ///     Ch_WorkRestore, which copies it from another actor. So either it arrives with loaded
+    ///     data or it is never set at all, and which of those is true decides whether the NPC
+    ///     problem is a missing flag or a second uncorrected path. The counters answer it.
+    /// </summary>
+    public bool MotionSurvey { get; init; }
+
+    /// <summary>
     ///     Hold only these step kernels, by name. Empty means all of them.
     ///
     ///     Not every update is only motion. A kernel that initialises what it just spawned, or that

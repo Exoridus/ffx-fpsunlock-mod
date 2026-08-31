@@ -64,6 +64,16 @@ public static class EngineAddresses
 
     // --- Character and motion ---
 
+    /// <summary>
+    ///     The per-actor motion advance, FUN_00838d10(actor, mode). Cdecl. It adds the actor's
+    ///     motion speed into the frame accumulator at actor+0x740, and applies sg_rate only when
+    ///     the actor's flag word at +0x194 carries 0x100000 and KEEP_FPS is set.
+    /// </summary>
+    public const nint MotionAdvance = 0x438D10;
+
+    /// <summary>The actor's flag word, tested by the motion advance for 0x40 and 0x100000.</summary>
+    public const int ActorFlagsOffset = 0x194;
+
     /// <summary>Ch_CalcMain(float delta). The engine passes a fixed delta of 0.033373334.</summary>
     public const nint ChCalcMain = 0x432E90;
 
