@@ -54,13 +54,17 @@ public unsafe sealed partial class Fps60Module
            $"uv_scroll={_uv_scroll} texanim_enable={_texanim_set_enable} " +
            $"advance_old={_texanim_advance_old_path}";
 
-    /* Two parameters here, though the call sites pass three and the reason to keep two is weak:
-     * the catalog's __stdcall is a default rather than a measurement, and this function's tail does
-     * not resolve to a return at all, so nothing in the binary states an argument count. Left as it
-     * is because the probe never fires in the measured scenes; revisit with a disassembler rather
-     * than with the catalog. */
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    private delegate int d_texanim_draw(int index, int arg2);
+    /* Cdecl, read off the bytes. The function is a dispatcher: it branches on the format byte in
+     * tex_anim_wk and either returns through a plain ret at +0x28 or tail-jumps into
+     * chr_texanim_draw_sub_old/_new. That ret is the evidence - the caller cleans, so nothing
+     * records an argument count and the two call sites at :972567 and :972591 are the only word on
+     * it. Both pass three, and the body reads only [ebp+8] and [ebp+0xc], so under cdecl either
+     * count chains correctly and the third is simply passed on to the tail call.
+     *
+     * The convention is what matters here. It was briefly StdCall, on the strength of the catalog
+     * column, which would have popped eight bytes the caller also pops. */
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int d_texanim_draw(int index, int arg2, int arg3);
 
     // Three int parameters, read off the decompiled body at 0x0090bdb0: it indexes a table with
     // param_2 * 0x720 + param_1 + param_3 * 0x1c and formats a texture id from what it finds. The
@@ -69,19 +73,23 @@ public unsafe sealed partial class Fps60Module
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_screen_texanim_draw(int table, int bank, int index);
 
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    /* StdCall: setMaterialUVScroll ends in `ret 0xc` and has no plain ret at all, so the callee
+     * pops the three arguments. Declared Cdecl the detour would leave them on the stack that the
+     * original also does not clean, twelve bytes per call. It has never fired in a measured scene,
+     * which is the only reason that has not shown up as a crash. */
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     private delegate void d_uv_scroll(nint arg1, float arg2, float arg3);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_texanim_set_enable(uint arg1, uint arg2);
 
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
-    private int h_texanim_draw(int index, int arg2)
+    private int h_texanim_draw(int index, int arg2, int arg3)
     {
         _texanim_draw++;
         var orig = new FhMethodHandle<d_texanim_draw>(new FhMethodLocation(EngineAddresses.ChrTexAnimDraw, 0))
             .chain_from(h_texanim_draw).fnptr;
-        return orig is null ? 0 : orig(index, arg2);
+        return orig is null ? 0 : orig(index, arg2, arg3);
     }
 
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
@@ -92,7 +100,7 @@ public unsafe sealed partial class Fps60Module
             .chain_from(h_screen_texanim_draw).fnptr?.Invoke(table, bank, index);
     }
 
-    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvStdcall)])]
     private void h_uv_scroll(nint arg1, float arg2, float arg3)
     {
         _uv_scroll++;

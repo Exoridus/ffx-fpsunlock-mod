@@ -48,7 +48,11 @@ public unsafe sealed partial class Fps60Module
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_menu_water();
 
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    /* Cdecl by default rather than by evidence: graphicVideoUpdate ends in a jmp, so it hands its
+     * frame to the target and nothing here states who cleans. It takes no arguments, so the two
+     * conventions are identical for it and the choice does not matter - unlike setMaterialUVScroll,
+     * which really does pop its own. */
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_video_update();
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
@@ -76,7 +80,7 @@ public unsafe sealed partial class Fps60Module
      *
      * This is the hook that has to go once real 60 FPS video ships: with a 59.94 asset the update
      * belongs on every frame, and holding it would halve the video's own framerate. */
-    [UnmanagedCallConv(CallConvs = [typeof(CallConvStdcall)])]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     private void h_video_update()
     {
         if (!advance_this_frame()) return;
