@@ -38,9 +38,10 @@ public unsafe sealed partial class Fps60Module
 
     /* Cdecl, not StdCall, and the binary is what says so: every ret in this function is a plain
      * c3, so the caller cleans the argument. The catalog calls it __stdcall, but that label is a
-     * blanket default there - 57,699 of 58,806 functions carry it and not one sampled function in
-     * this image ends in ret imm16. A StdCall delegate made the detour pop the argument the caller
-     * also pops, which drifted the stack and killed the boot before the first splash. */
+     * blanket default there, carried by 57,699 of 58,806 functions and predicting nothing - a scan
+     * of every function's last instruction finds 16,025 that really do end in ret imm16 and 33,784
+     * that do not. A StdCall delegate made the detour pop the argument the caller also pops, which
+     * drifted the stack and killed the boot before the first splash. */
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_effect_process(int mode);
 

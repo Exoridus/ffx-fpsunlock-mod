@@ -54,10 +54,11 @@ public unsafe sealed partial class Fps60Module
            $"uv_scroll={_uv_scroll} texanim_enable={_texanim_set_enable} " +
            $"advance_old={_texanim_advance_old_path}";
 
-    /* Two parameters, and it has to stay two. Both call sites pass a third, but the function is
-     * __stdcall: the callee cleans the stack, and Ghidra reads that count off the ret imm16 rather
-     * than guessing it, so the ret is the authority and the call sites are the mis-read. A
-     * three-parameter delegate would clean twelve bytes where the original cleans eight. */
+    /* Two parameters here, though the call sites pass three and the reason to keep two is weak:
+     * the catalog's __stdcall is a default rather than a measurement, and this function's tail does
+     * not resolve to a return at all, so nothing in the binary states an argument count. Left as it
+     * is because the probe never fires in the measured scenes; revisit with a disassembler rather
+     * than with the catalog. */
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     private delegate int d_texanim_draw(int index, int arg2);
 
