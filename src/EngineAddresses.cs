@@ -44,6 +44,19 @@ public static class EngineAddresses
     public const nint SgGetKeepFps = 0x4206B0;
 
     /// <summary>
+    ///     yiAnimInfo_init(info). Stdcall. Picks the clock the event worker's animation curves run
+    ///     on and stores it in yi_anim_clock_mode, once, from whatever KEEP_FPS happens to be.
+    /// </summary>
+    public const nint YiAnimInfoInit = 0x514310;
+
+    /// <summary>
+    ///     The clock mode itself. Zero routes the worker through yiGetFCount, which is sg_count * 2
+    ///     and advances two units per presented frame with nothing correcting it; non-zero routes it
+    ///     through yiGetVCount, whose advance this module already rescales.
+    /// </summary>
+    public const nint YiAnimClockMode = 0x153BB08;
+
+    /// <summary>
     ///     sbyte. The KEEP_FPS flag itself, which Sg_GetKeepFps returns. Read directly rather than
     ///     mirrored through the setter, so a write this module does not see cannot desynchronise it.
     /// </summary>

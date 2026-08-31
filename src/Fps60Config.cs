@@ -128,6 +128,19 @@ public sealed record Fps60Config
     public bool ParticleKernelHold { get; init; } = true;
 
     /// <summary>
+    ///     Force the event worker's animation curves onto the vertical blank clock.
+    ///
+    ///     yiAnimInfo_init copies KEEP_FPS into the mode global once, and the worker then reads
+    ///     either yiGetVCount, which this module rescales, or yiGetFCount, which is sg_count * 2 and
+    ///     nothing rescales. Which one a scene gets therefore depends on what KEEP_FPS happened to
+    ///     be at init - and KEEP_FPS is observed toggling during play. Forcing the mode removes the
+    ///     coin flip.
+    ///
+    ///     Untested in a running game. Off until it has been looked at.
+    /// </summary>
+    public bool EventClockOnVblank { get; init; }
+
+    /// <summary>
     ///     Hold only these step kernels, by name. Empty means all of them.
     ///
     ///     Not every update is only motion. A kernel that initialises what it just spawned, or that

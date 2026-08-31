@@ -52,6 +52,12 @@ public unsafe sealed partial class Fps60Module
         ok &= hook_or_log("vertical blank counters", EngineAddresses.AdvanceVBlankCounters,
             () => new FhMethodHandle<d_advance_vblank>(new FhMethodLocation(EngineAddresses.AdvanceVBlankCounters, 0)).hook(this, h_advance_vblank));
 
+        if (_config.EventClockOnVblank)
+        {
+            ok &= hook_or_log("yiAnimInfo_init", EngineAddresses.YiAnimInfoInit,
+                () => new FhMethodHandle<d_yi_anim_info_init>(new FhMethodLocation(EngineAddresses.YiAnimInfoInit, 0)).hook(this, h_yi_anim_info_init));
+        }
+
         if (_config.CharacterDelta)
         {
             ok &= hook_or_log("Ch_CalcMain", EngineAddresses.ChCalcMain,
@@ -148,7 +154,27 @@ public unsafe sealed partial class Fps60Module
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     private delegate void d_set_tex_anim_timer(nint ptr_chr, uint timer);
 
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void d_yi_anim_info_init(nint info);
+
     // --- Handlers ---
+
+    /* yiAnimInfo_init reads KEEP_FPS once and stores it as the clock the event worker's animation
+     * curves run on: zero means yiGetFCount, which is sg_count * 2 and gains two units per presented
+     * frame with nothing correcting it, non-zero means yiGetVCount, which h_advance_vblank rescales.
+     *
+     * KEEP_FPS is observed toggling during play, so which clock a scene gets is otherwise decided by
+     * whatever it happened to be at init. Writing the mode after the original has run puts every
+     * scene on the counter that is corrected. */
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private void h_yi_anim_info_init(nint info)
+    {
+        new FhMethodHandle<d_yi_anim_info_init>(new FhMethodLocation(EngineAddresses.YiAnimInfoInit, 0))
+            .chain_from(h_yi_anim_info_init).fnptr?.Invoke(info);
+
+        FhUtil.set_at(EngineAddresses.YiAnimClockMode, 1u);
+        _logger.Info("[Fps60] Event worker clock forced to the vertical blank counter.");
+    }
 
     /* The engine advances both vertical blank counters by a hardcoded 2 per frame, its assumption of
      * two vertical blanks per 30 Hz frame. Sg_MainCalcRate turns their delta into the animation rate
