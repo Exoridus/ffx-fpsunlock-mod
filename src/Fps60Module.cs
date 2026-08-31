@@ -62,6 +62,7 @@ public unsafe sealed partial class Fps60Module : FhModule
         ok &= init_frame_sequence_hooks();
         ok &= init_particle_hooks();
         ok &= init_effect_hooks();
+        ok &= init_particle_kernel_hooks();
         ok &= init_survey_hooks();
 
         // Said first and unconditionally: a config that was looked for in the wrong directory
@@ -134,7 +135,7 @@ public unsafe sealed partial class Fps60Module : FhModule
         _logger.Info($"[Fps60] present {fps:F1} fps over the last {(now - _last_sample).TotalSeconds:F1}s, " +
                      $"vsync_interval={VSyncInterval}, keep_fps={KeepFps}, " +
                      $"sg_ratef={FhUtil.get_at<float>(EngineAddresses.SgRateF):F3}, " +
-                     $"{particle_counts()}, {effect_counts()}, {survey_counts()}");
+                     $"{particle_counts()}, {effect_counts()}, {kernel_counts()}, {survey_counts()}");
 
         _frames_at_last_sample = _frames;
         _last_sample = now;

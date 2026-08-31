@@ -31,6 +31,11 @@ public unsafe sealed partial class Fps60Module
     private long _part_held;
     private long _part_runs;
     private long _fp_runs;
+    private long _fp_scaled;
+    private readonly Dictionary<nint, (long Frame, long Ticks)> _fp_started = [];
+    private readonly Queue<double> _fp_lifetimes = new();
+    private readonly Queue<long> _fp_life_frames = new();
+    private readonly Dictionary<nint, int> _fp_steps = [];
     private long _fp_held;
     private long _part_loops;
     private long _part_rescaled;
@@ -60,7 +65,8 @@ public unsafe sealed partial class Fps60Module
     private string particle_counts()
         => $"part_starts={_part_starts} part_runs={_part_runs} part_loops={_part_loops} " +
            $"part_rescaled={_part_rescaled} part_held={_part_held} fp_runs={_fp_runs} " +
-           $"fp_held={_fp_held} part_step=0x{_part_step_observed:X}";
+           $"fp_held={_fp_held} fp_scaled={_fp_scaled} {field_lifetimes()} " +
+           $"part_step=0x{_part_step_observed:X}";
 
     /* The hold and the step scaling are alternatives, not layers. Holding halves how often the
      * pass runs; scaling the step on top of that would stretch every lifetime to twice its wall
@@ -132,10 +138,73 @@ public unsafe sealed partial class Fps60Module
             return 0;
         }
 
+        if (_config.FieldParticleStepScale) scale_field_step(manager);
+
+        if (!_fp_started.ContainsKey(manager)) note_field_start(manager);
+
         var orig = new FhMethodHandle<d_ppp_run_part_fp>(new FhMethodLocation(EngineAddresses.PppRunPartFp, 0))
             .chain_from(h_ppp_run_part_fp).fnptr;
 
-        return orig is null ? 0 : orig(manager, mode);
+        uint result = orig is null ? 0 : orig(manager, mode);
+
+        // Non-zero is pppFpLoop's signal to free the group and start it again.
+        if (result != 0) note_field_end(manager);
+
+        return result;
+    }
+
+    /* How long a field particle group lives, in wall clock and in presented frames.
+     *
+     * This is the measurement the eye cannot make. A group's lifetime is authored in the manager's
+     * own time units, so at the authored rate it should take the same number of seconds however
+     * fast the game presents frames. Twice the advance rate halves the seconds and leaves the frame
+     * count alone; a correct retiming restores the seconds and doubles the frames. */
+    private string field_lifetimes()
+    {
+        if (_fp_lifetimes.Count == 0) return "fp_life=-";
+
+        double ms = _fp_lifetimes.Average();
+        double frames = _fp_life_frames.Average();
+
+        return $"fp_life={ms:F0}ms/{frames:F0}f(n={_fp_lifetimes.Count})";
+    }
+
+    private void note_field_start(nint manager)
+    {
+        _fp_started[manager] = (_frames, Stopwatch.GetTimestamp());
+    }
+
+    private void note_field_end(nint manager)
+    {
+        if (!_fp_started.Remove(manager, out var start)) return;
+
+        double ms = (Stopwatch.GetTimestamp() - start.Ticks) * 1000.0 / Stopwatch.Frequency;
+
+        // A group that lived a single frame is a restart, not a lifetime.
+        if (ms < 16) return;
+
+        _fp_lifetimes.Enqueue(ms);
+        _fp_life_frames.Enqueue(_frames - start.Frame);
+
+        while (_fp_lifetimes.Count > 20) { _fp_lifetimes.Dequeue(); _fp_life_frames.Dequeue(); }
+    }
+
+    /* The manager's step lives at +0x10 and its accumulated time at +0x8, which _pppRunPartFp
+     * advances by one step per call. Halving the step leaves the pass and its draw packet alone.
+     *
+     * The value we wrote is remembered per manager so a step is halved once rather than on every
+     * frame: anything that does not match what we last wrote is a value the engine set, and only
+     * that is scaled. */
+    private void scale_field_step(nint manager)
+    {
+        int* step = (int*)(manager + ParticleStepOffset);
+
+        if (*step <= 0) return;
+        if (_fp_steps.TryGetValue(manager, out int written) && written == *step) return;
+
+        *step = Math.Max(1, (int)Math.Round(*step / Scale));
+        _fp_steps[manager] = *step;
+        _fp_scaled++;
     }
 
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]

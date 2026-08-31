@@ -7,3 +7,4 @@ global using System.Runtime.InteropServices;
 global using System.Text.Json;
 global using Fahrenheit;
 global using Fahrenheit.FFX.Ids;
+global using System.Linq;

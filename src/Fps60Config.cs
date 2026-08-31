@@ -64,7 +64,7 @@ public sealed record Fps60Config
     ///     is a real retiming: the effect advances half as far per frame and therefore takes the
     ///     same wall clock time as at 30 Hz, with drawing and lifetime untouched.
     /// </summary>
-    public bool Particles { get; init; } = true;
+    public bool Particles { get; init; }
 
     /// <summary>
     ///     Hold the particle manager pass instead of scaling its time step, skipping it on the
@@ -87,7 +87,7 @@ public sealed record Fps60Config
     ///     once per presented frame whether or not the frame ran a simulation step. Holding only the
     ///     advance is the one lever here that cannot flicker, because nothing about drawing changes.
     /// </summary>
-    public bool EffectHold { get; init; }
+    public bool EffectHold { get; init; } = true;
 
     /// <summary>
     ///     Attach the MsEffectProcess hook and count advance and draw calls without holding
@@ -105,6 +105,40 @@ public sealed record Fps60Config
     ///     in which case held frames draw nothing.
     /// </summary>
     public bool FieldParticleHold { get; init; }
+
+    /// <summary>
+    ///     Halve the time step of every field particle manager as it is advanced, instead of
+    ///     skipping the advance.
+    ///
+    ///     The alternative to the hold, and the only one that cannot flicker: the pass still runs
+    ///     every frame and still builds its draw packet, but the manager's accumulator moves half as
+    ///     far. Whether that reaches the motion is the open question - the kernels may advance their
+    ///     objects incrementally per call, in which case the accumulator only governs lifetime and
+    ///     emission and nothing visible changes.
+    /// </summary>
+    public bool FieldParticleStepScale { get; init; }
+
+    /// <summary>
+    ///     Hold the particle step kernels that move an object, leaving the ones that draw it alone.
+    ///
+    ///     This is the retiming the particle system's own structure allows: a program step carries a
+    ///     separate update and draw entry point, and only the update advances anything. Holding the
+    ///     update on skipped frames halves the motion while every frame still draws.
+    /// </summary>
+    public bool ParticleKernelHold { get; init; } = true;
+
+    /// <summary>
+    ///     Hold only these step kernels, by name. Empty means all of them.
+    ///
+    ///     Not every update is only motion. A kernel that initialises what it just spawned, or that
+    ///     maintains geometry a draw kernel then reads, misbehaves when it is skipped rather than
+    ///     merely running at half rate - which is why the set is narrowed from a config file
+    ///     instead of a rebuild.
+    /// </summary>
+    public string[] ParticleKernelOnly { get; init; } = [];
+
+    /// <summary>Leave these step kernels running at full rate, by name.</summary>
+    public string[] ParticleKernelExcept { get; init; } = [];
 
     /// <summary>
     ///     Overwrite the hardcoded 29.97 the video update loop multiplies its time step by

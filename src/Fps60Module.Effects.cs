@@ -36,10 +36,15 @@ public unsafe sealed partial class Fps60Module
                 .hook(this, h_effect_process));
     }
 
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    /* Cdecl, not StdCall, and the binary is what says so: every ret in this function is a plain
+     * c3, so the caller cleans the argument. The catalog calls it __stdcall, but that label is a
+     * blanket default there - 57,699 of 58,806 functions carry it and not one sampled function in
+     * this image ends in ret imm16. A StdCall delegate made the detour pop the argument the caller
+     * also pops, which drifted the stack and killed the boot before the first splash. */
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_effect_process(int mode);
 
-    [UnmanagedCallConv(CallConvs = [typeof(CallConvStdcall)])]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     private void h_effect_process(int mode)
     {
         if (mode == EffectAdvanceMode) _effect_advances++;
