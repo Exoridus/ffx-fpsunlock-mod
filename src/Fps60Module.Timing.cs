@@ -6,11 +6,29 @@ namespace Fahrenheit.Mods.Fps60;
 /// </summary>
 public unsafe sealed partial class Fps60Module
 {
-    /// <summary>How much longer a frame-expressed duration must be at the current framerate.</summary>
-    private static float Scale => TargetFramerate / 30f;
+    /// <summary>
+    ///     How much longer a frame-expressed duration must be at the current framerate.
+    ///
+    ///     One is the answer while the engine is pacing itself from the syncdata table. Sg_MainCalcRate
+    ///     takes sg_rate from g_sgSyncRate whenever g_isNeedSync is set, and the catch-up loop then
+    ///     holds the simulation to the recorded PS2 frame times - the scene already runs at its
+    ///     authored rate, and correcting it a second time is what halves it.
+    /// </summary>
+    private static float Scale => IsSyncPaced ? 1f : TargetFramerate / 30f;
 
-    private static ushort scale_up(ushort frames) => (ushort)Math.Min(ushort.MaxValue, (int)(frames * Scale));
-    private static uint scale_up(uint frames) => (uint)(frames * Scale);
+    private static bool IsSyncPaced
+        => _sync_aware && FhUtil.get_at<uint>(EngineAddresses.IsNeedSync) == 1;
+
+    // Static because Scale is, and Scale is read from static helpers on hot paths.
+    private static bool _sync_aware = true;
+
+    /// <summary>
+    ///     Frame counts are stored in 16 bits by every consumer this module scales for - the camera
+    ///     track record, the fade, flash and alpha slots. Both overloads clamp, because an unclamped
+    ///     scale that wrapped would make a long duration a short one rather than a wrong one.
+    /// </summary>
+    private static ushort scale_up(ushort frames) => (ushort)Math.Min(short.MaxValue, (int)(frames * Scale));
+    private static uint scale_up(uint frames) => (uint)Math.Min(short.MaxValue, (long)(frames * Scale));
     /// <summary>
     ///     Halves a speed, never to zero. A motion speed of 0 does not advance at all, so rounding a
     ///     small non-zero speed away stalls whatever waits for that motion to finish - which is how
@@ -143,7 +161,7 @@ public unsafe sealed partial class Fps60Module
     private delegate void d_set_motion_speed(nint ptr_actor, ushort speed);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate void d_effect_set_speed(byte chr_id, ushort speed);
+    private delegate void d_effect_set_speed(byte chr_id, int speed);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_set_motion_param(uint chr_id, uint stat_id, float value);
@@ -151,8 +169,11 @@ public unsafe sealed partial class Fps60Module
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_set_chr_stat(uint chr_id, uint stat_id, uint target_id, uint value);
 
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    private delegate void d_set_tex_anim_timer(nint ptr_chr, uint timer);
+    /* Cdecl, measured rather than taken from the catalog: Ch_TextureSetAnimTimer ends in a plain c3,
+     * so the caller cleans. Declaring it StdCall made the detour pop eight bytes the four call sites
+     * pop as well, which drifts the stack on every call and faults far from the cause. */
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void d_set_tex_anim_timer(nint ptr_chr, int timer);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_yi_anim_info_init(nint info);
@@ -286,57 +307,81 @@ public unsafe sealed partial class Fps60Module
             .chain_from(h_set_motion_speed).fnptr!(ptr_actor, speed);
     }
 
+    /* A negative speed is not a speed. MsEffectSetSpeed treats it as "drop the override": it clears
+     * the actor's effect speed field and hands the decision back to MsCalcMotionSpeed. Reading the
+     * argument as unsigned turned that sentinel into 0x7FFF, so a reset became the fastest effect
+     * speed the field can hold. */
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
-    private void h_effect_set_speed(byte chr_id, ushort speed)
+    private void h_effect_set_speed(byte chr_id, int speed)
     {
+        if (speed >= 0) speed = scale_down((ushort)Math.Min(ushort.MaxValue, speed));
+
         new FhMethodHandle<d_effect_set_speed>(new FhMethodLocation(EngineAddresses.MsEffectSetSpeed, 0))
-            .chain_from(h_effect_set_speed).fnptr!(chr_id, scale_down(speed));
+            .chain_from(h_effect_set_speed).fnptr!(chr_id, speed);
     }
 
     /* Only the four run-speed properties are frame-expressed. Ids 0, 1, 2, 7 and 8 are distances,
-     * offsets and a weight; scaling those would move characters, not retime them. */
+     * offsets and a weight; scaling those would move characters, not retime them.
+     *
+     * Id 6 is not a speed but an acceleration, and it therefore scales with the square. The consumer
+     * integrates it once per frame - v += motion_run_speed_acc, then pos -= v, starting from
+     * motion_run_speed_v0 (id 5). Under t -> 2t a per-frame velocity halves and a per-frame velocity
+     * increment quarters; treating both alike left the acceleration twice as strong as the rest of
+     * the motion, which reads as a character that starts correctly and then overshoots. */
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     private void h_set_motion_param(uint chr_id, uint stat_id, float value)
     {
         float scaled = stat_id switch
         {
-            3 or 4 or 5 or 6 => value / Scale,
-            _                => value
+            3 or 4 or 5 => value / Scale,
+            6           => value / (Scale * Scale),
+            _           => value
         };
 
         new FhMethodHandle<d_set_motion_param>(new FhMethodLocation(EngineAddresses.SetMotionParamFloat, 0))
             .chain_from(h_set_motion_param).fnptr!(chr_id, stat_id, scaled);
     }
 
-    /* Speed stats are per-frame rates and shrink; frame-count stats are durations and grow. */
+    /* Passes every stat through unchanged. The hook stays because the address and the reasoning are
+     * worth keeping in one place, and re-enabling a correction here is one line.
+     *
+     * Both corrections this used to make were wrong, and for opposite reasons.
+     *
+     * STAT_ATTACK_INC_SPEED and _DEC_SPEED are not rates. The engine's own debug dump names them
+     * 攻撃：加速％ and 減速％ - percentages, stored as single bytes at Chr+0x4B9 and +0x4BA, and no
+     * function in the image reads either one.
+     *
+     * The three frame-count stats are durations, but scaling them alone makes characters travel
+     * further rather than slower. Chr+0x40C is the iteration count of a per-frame integration whose
+     * result is a distance: the loop adds Chr+0x468 into a velocity and the velocity into a
+     * position, and those three rates arrive as ATEL float arguments that nothing here scales.
+     * Doubling only the loop count doubles the distance walked. They are also bytes, so a scaled
+     * value above 127 wrapped. The correction belongs at the ATEL opcode that sets the rates, with
+     * the frame counts, or nowhere. */
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     private void h_set_chr_stat(uint chr_id, uint stat_id, uint target_id, uint value)
     {
-        value = stat_id switch
-        {
-            ChrStatId.STAT_ATTACK_INC_SPEED or
-            ChrStatId.STAT_ATTACK_DEC_SPEED    => (uint)(value / Scale),
-            ChrStatId.STAT_ATTACK_NORMAL_FRAME or
-            ChrStatId.STAT_ATTACK_NEAR_FRAME   or
-            ChrStatId.STAT_ATTACK_MOTION_FRAME => (uint)(value * Scale),
-            _                                  => value
-        };
-
         new FhMethodHandle<d_set_chr_stat>(new FhMethodLocation(EngineAddresses.MsSetChrStatInfo, 0))
             .chain_from(h_set_chr_stat).fnptr!(chr_id, stat_id, target_id, value);
     }
 
-    /* The texture animation period, stored as a byte per slot. Scaling it is a real retiming rather
-     * than a frame skip, so animated textures keep every frame they were authored with.
+    /* Passes the value through. It is not a period.
      *
-     * Clamped to a byte: the store truncates, and a period that wrapped to a small value would run
-     * the animation faster than vanilla instead of slower. */
-    [UnmanagedCallConv(CallConvs = [typeof(CallConvStdcall)])]
-    private void h_set_tex_anim_timer(nint ptr_chr, uint timer)
+     * The byte this writes is the step the new-format advance adds to its sequence accumulator each
+     * call - the accumulator is then compared against the per-sprite duration, so the period lives
+     * in the asset and the timer is the rate. Scaling it up therefore doubled a rate that was
+     * already running twice too fast, which is 4x rather than a correction. Its only two engine
+     * writers confirm the reading: MsCalcMotionSpeed writes the literals 1 and 0 on the zero
+     * crossing of the motion speed, so it is pause and resume, not a duration.
+     *
+     * The correction the byte can express is a hold, not a factor - write 0 on a skipped frame and
+     * restore the engine's own last value on an advancing one. That needs per-slot state this hook
+     * does not have yet, and until it does, running vanilla is the correct behaviour rather than a
+     * placeholder. */
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private void h_set_tex_anim_timer(nint ptr_chr, int timer)
     {
-        uint scaled = Math.Min(byte.MaxValue, (uint)Math.Round(timer * Scale));
-
         new FhMethodHandle<d_set_tex_anim_timer>(new FhMethodLocation(EngineAddresses.ChTextureSetAnimTimer, 0))
-            .chain_from(h_set_tex_anim_timer).fnptr!(ptr_chr, scaled);
+            .chain_from(h_set_tex_anim_timer).fnptr!(ptr_chr, timer);
     }
 }

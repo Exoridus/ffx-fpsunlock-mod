@@ -40,6 +40,44 @@ public sealed record Fps60Config
     public bool BattleTimers { get; init; } = true;
 
     /// <summary>
+    ///     Treat the engine as already correctly paced while it is running from the syncdata table.
+    ///
+    ///     Sg_MainCalcRate takes sg_rate from g_sgSyncRate whenever g_isNeedSync is set, and the
+    ///     catch-up loop then holds the simulation to the PS2 frame times the table records. Every
+    ///     duration this module scales is wrong in that state, because the scene is already playing
+    ///     at its authored rate. Roughly a third of the recorded frames ask for a rate other than
+    ///     nominal, across three cutscenes.
+    /// </summary>
+    public bool SyncDataAware { get; init; } = true;
+
+    /// <summary>
+    ///     Attach the two counters inside the motion path that sg_rate never reaches - the
+    ///     cross-fade length and the sequence VM's wait - and report how often they run.
+    /// </summary>
+    public bool MotionSequenceCounters { get; init; } = true;
+
+    /// <summary>
+    ///     Hold those two counters on skipped frames, so a cross-fade and a scripted wait take the
+    ///     same wall clock time they were authored for. Separate from the counters so the hooks can
+    ///     be measured before they change anything.
+    /// </summary>
+    public bool MotionSequenceHold { get; init; } = true;
+
+    /// <summary>
+    ///     Scale the 90-frame hold the battle entry waits out before the encounter starts. It counts
+    ///     presented frames, so at 60 Hz the transition blur runs 1.5 seconds instead of 3 and the
+    ///     opening camera arrives early - the part of "the intro is too fast" that no camera hook
+    ///     reaches.
+    /// </summary>
+    public bool BattleIntroBlur { get; init; } = true;
+
+    /// <summary>
+    ///     Hold the texture video update. This is the second video path, separate from the FMV
+    ///     player, and it advances once per presented frame with no rate of its own.
+    /// </summary>
+    public bool TextureVideo { get; init; } = true;
+
+    /// <summary>
     ///     Hold the main menu water animation so its 69 prepared images play at their authored rate.
     ///     Frame skipping, and therefore 30 Hz inside a 60 Hz game.
     /// </summary>
@@ -183,6 +221,17 @@ public sealed record Fps60Config
     ///     Changes no behaviour; it identifies which function is on the live path.
     /// </summary>
     public bool SurveyTextureAnimation { get; init; } = true;
+
+    /// <summary>
+    ///     Report, immediately before every magic overlay unload, whether any live particle object
+    ///     still points at a program descriptor inside the image about to be unmapped.
+    ///
+    ///     An overlay ships its own _PPP_PROG records, and pppDeletePObject calls a step's destructor
+    ///     slot unconditionally when the object is torn down. One such descriptor at unload time is
+    ///     the whole crash; none across several battles falsifies the candidate. Costs one walk of
+    ///     the manager array per unload and changes nothing.
+    /// </summary>
+    public bool OverlayUnloadProbe { get; init; } = true;
 
     /// <summary>Log measured present rate and frame delta statistics.</summary>
     public bool Telemetry { get; init; } = true;

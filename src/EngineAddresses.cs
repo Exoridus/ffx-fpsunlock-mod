@@ -202,6 +202,35 @@ public static class EngineAddresses
     /// </summary>
     public const nint ChrTexAnimAdvanceOld = 0x37FFD0;
 
+    /// <summary>
+    ///     MagicFile_Unload. No arguments. Calls graphicVFXDestroyAllExceptFieldAndEternal and then
+    ///     PhyreFIOS::UnloadMagicfilePrx, which is the FreeLibrary. It runs from MagicFile_Update in
+    ///     the tail of Sg_MainLoop, after the frame's present - so an overlay is stopped and unmapped
+    ///     inside one main loop iteration, not across a frame boundary.
+    /// </summary>
+    public const nint MagicFileUnload = 0x5DA940;
+
+    /// <summary>int. The magic id MagicFile_Cleanup queued for unloading; -1 when nothing is queued.</summary>
+    public const nint ToBeDeleteMagicId = 0x864CA4;
+
+    /// <summary>
+    ///     Ch_SeqFrame(work). The motion sequence VM. Its wait opcode counts raw calls at
+    ///     work+0x72a and nothing corrects it.
+    /// </summary>
+    public const nint ChSeqFrame = 0x437840;
+
+    /// <summary>
+    ///     The motion cross-fade, FUN_00839630(work, hokan). Blends each channel by
+    ///     (target - current) / hokan; the advance counts hokan down immediately afterwards.
+    /// </summary>
+    public const nint ChMotionInterpolate = 0x439630;
+
+    /// <summary>
+    ///     graphicTextureVideoUpdate. The texture video path, which is not the FMV path and is not
+    ///     reached by the FMV frameskip.
+    /// </summary>
+    public const nint GraphicTextureVideoUpdate = 0x244470;
+
     /// <summary>graphicDrawMainMenuWaterEffect. One scrolling image per frame.</summary>
     public const nint GraphicDrawMainMenuWaterEffect = 0x23EAD0;
 
@@ -275,6 +304,32 @@ public static class EngineAddresses
 
     /// <summary>float. Displayed limit time, deliberately jittered in its last digit.</summary>
     public const nint LimitTimerRounded = 0xF3F754;
+
+    /// <summary>
+    ///     uint. EnableGameTextureAnimation. The image ships it as 1; FUN_00836790 is the only
+    ///     writer and FUN_006bb810 calls it with 0 on one branch. Zero disables the whole character
+    ///     texture animation advance.
+    /// </summary>
+    public const nint EnableGameTextureAnimation = 0x849720;
+
+    /// <summary>
+    ///     uint. g_isNeedSync. While it is 1, Sg_MainCalcRate takes sg_rate from the syncdata table
+    ///     instead of from the vertical blank delta, which discards this module's correction.
+    /// </summary>
+    public const nint IsNeedSync = 0xEFB858;
+
+    /// <summary>
+    ///     uint. force_wait_blur_frame_count. Set to 0x5a by the eternal effect VM's opcode 0x0c
+    ///     handler at 0x007f91a0 and counted down once per MsBtlReadManage call, which is once per
+    ///     presented frame. Battle state 0x16 waits for it to reach zero before the encounter starts.
+    /// </summary>
+    public const nint ForceWaitBlurFrameCount = 0xD2CA64;
+
+    /// <summary>
+    ///     The eternal effect VM's transition blur, opcode 0x0c of the object opcode table. It is
+    ///     what writes the 90-frame battle entry hold.
+    /// </summary>
+    public const nint EternalBlurTransition = 0x3F91A0;
 
     // --- Texture animation candidates, survey only ---
 

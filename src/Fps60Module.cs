@@ -65,6 +65,10 @@ public unsafe sealed partial class Fps60Module : FhModule
         ok &= init_particle_kernel_hooks();
         ok &= init_motion_survey();
         ok &= init_survey_hooks();
+        ok &= init_overlay_probe();
+        ok &= init_motion_sequence_hooks();
+
+        _sync_aware = _config.SyncDataAware;
 
         // Said first and unconditionally: a config that was looked for in the wrong directory
         // reads as a run with every default, and nothing else in this log distinguishes the two.
@@ -136,7 +140,9 @@ public unsafe sealed partial class Fps60Module : FhModule
         _logger.Info($"[Fps60] present {fps:F1} fps over the last {(now - _last_sample).TotalSeconds:F1}s, " +
                      $"vsync_interval={VSyncInterval}, keep_fps={KeepFps}, " +
                      $"sg_ratef={FhUtil.get_at<float>(EngineAddresses.SgRateF):F3}, " +
-                     $"{particle_counts()}, {effect_counts()}, {kernel_counts()}, {motion_counts()}, {survey_counts()}");
+                     $"{particle_counts()}, {effect_counts()}, {kernel_counts()}, {motion_counts()}, {survey_counts()}, " +
+                     $"{overlay_probe_counts()}, {engine_state_counts()}, " +
+                     $"{motion_sequence_counts()}, {frame_sequence_counts()}");
 
         _frames_at_last_sample = _frames;
         _last_sample = now;

@@ -36,6 +36,18 @@ public unsafe sealed partial class Fps60Module
                 () => new FhMethodHandle<d_video_update>(new FhMethodLocation(EngineAddresses.GraphicVideoUpdate, 0)).hook(this, h_video_update));
         }
 
+        if (_config.TextureVideo)
+        {
+            ok &= hook_or_log("graphicTextureVideoUpdate", EngineAddresses.GraphicTextureVideoUpdate,
+                () => new FhMethodHandle<d_texture_video_update>(new FhMethodLocation(EngineAddresses.GraphicTextureVideoUpdate, 0)).hook(this, h_texture_video_update));
+        }
+
+        if (_config.BattleIntroBlur)
+        {
+            ok &= hook_or_log("battle entry blur", EngineAddresses.EternalBlurTransition,
+                () => new FhMethodHandle<d_eternal_blur>(new FhMethodLocation(EngineAddresses.EternalBlurTransition, 0)).hook(this, h_eternal_blur));
+        }
+
         if (_config.TextureAnimation)
         {
             ok &= hook_or_log("old-format texture animation advance", EngineAddresses.ChrTexAnimAdvanceOld,
@@ -57,6 +69,52 @@ public unsafe sealed partial class Fps60Module
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_texanim_advance_old(int slot);
+
+    /* No arguments, so the convention carries no risk either way. */
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void d_texture_video_update();
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void d_eternal_blur(int arg1, int arg2);
+
+    private long _texture_video_calls;
+    private long _texture_video_held;
+    private long _blur_transitions;
+
+    private string frame_sequence_counts()
+        => $"texvid={_texture_video_calls}/{_texture_video_held} blur_set={_blur_transitions}";
+
+    /* Texture videos are not FMVs and the FMV frameskip does not reach them - Zanarkand coming to
+     * life in Dream's End is one. The update runs once per main loop iteration and takes no time
+     * step, so like every prepared sequence in this file it can only be held. */
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private void h_texture_video_update()
+    {
+        _texture_video_calls++;
+
+        if (!advance_this_frame()) { _texture_video_held++; return; }
+
+        new FhMethodHandle<d_texture_video_update>(new FhMethodLocation(EngineAddresses.GraphicTextureVideoUpdate, 0))
+            .chain_from(h_texture_video_update).fnptr?.Invoke();
+    }
+
+    /* The eternal effect VM's transition blur writes force_wait_blur_frame_count = 0x5a, and the
+     * battle load sequencer counts it down once per presented frame before it will start the
+     * encounter. Scaling the count after the original has written it is the whole correction; the
+     * sequencer itself must not be held, because it is a state machine with load steps rather than
+     * a timer. */
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private void h_eternal_blur(int arg1, int arg2)
+    {
+        new FhMethodHandle<d_eternal_blur>(new FhMethodLocation(EngineAddresses.EternalBlurTransition, 0))
+            .chain_from(h_eternal_blur).fnptr?.Invoke(arg1, arg2);
+
+        uint frames = FhUtil.get_at<uint>(EngineAddresses.ForceWaitBlurFrameCount);
+        if (frames == 0) return;
+
+        FhUtil.set_at(EngineAddresses.ForceWaitBlurFrameCount, scale_up(frames));
+        _blur_transitions++;
+    }
 
     /* The main menu water is 69 images composited one per frame, with the current index in a byte.
      * The draw itself advances the index, so the hold is applied afterwards by winding it back on
