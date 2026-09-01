@@ -25,6 +25,10 @@ public unsafe sealed partial class Fps60Module
     ///     Everything ending in Con, Con2, Des or Draw is absent: those construct a step or draw
     ///     one, and neither advances anything.
     ///
+    ///     <c>Hold: false</c> also marks pppKeDrct and pppKeGrvTgt, whose entire body is the
+    ///     keyframe one-shot. They do nothing on an ordinary tick, so holding them retimes nothing
+    ///     and can only cost the keyframe. They stay hooked for their counts.
+    ///
     ///     <c>Hold: false</c> marks the four the Lns draw kernels call themselves -
     ///     <c>pppKeLnsFlsDraw</c> opens with <c>pppKeLnsFlsUpdate(param_1, param_2, param_3)</c>,
     ///     and Arnd, Clm and Crn do the same. Their bodies are not motion: they resolve the
@@ -38,8 +42,8 @@ public unsafe sealed partial class Fps60Module
     [
         ("pppKeBornRnd2",      0x3588A0, true ), ("pppKeBornRnd3",      0x358A50, true ),
         ("pppKeBornRnd5",      0x359010, true ), ("pppKeBornRnd6",      0x3592F0, true ),
-        ("pppKeDrct",          0x35E520, true ), ("pppKeGrvEff",        0x359740, true ),
-        ("pppKeGrvTgt",        0x3598A0, true ), ("pppKeHmgEff",        0x359CE0, true ),
+        ("pppKeDrct",          0x35E520, false), ("pppKeGrvEff",        0x359740, true ),
+        ("pppKeGrvTgt",        0x3598A0, false), ("pppKeHmgEff",        0x359CE0, true ),
         ("pppKeLnsArndUpdate", 0x35A3C0, false), ("pppKeLnsClmUpdate",  0x35A790, false),
         ("pppKeLnsCrnUpdate",  0x35ABA0, false), ("pppKeLnsFlsUpdate",  0x35AF80, false),
         ("pppKeLnsLpSft",      0x35A020, true ), ("pppKeMatSN",         0x3340F0, true ),
@@ -61,6 +65,28 @@ public unsafe sealed partial class Fps60Module
     ///     what threw the pyreflies across the screen.
     /// </summary>
     private const int ObjectStepOffset = 0xc;
+
+    /// <summary>
+    ///     True on a call the object cannot afford to miss, whatever else the kernel does.
+    ///
+    ///     <c>obj+0xc</c> is not a step index but the object's age in fixed point, advanced by
+    ///     0x1000 per pass at the tail of the dispatcher. A step's parameters arrive as a keyframe
+    ///     timeline, and a kernel runs its one-shot arm exactly when the age matches the keyframe
+    ///     the dispatcher's cursor is on - <c>*param_2</c>, already in the arguments. The cursor
+    ///     moves on afterwards, so that tick never comes back.
+    ///
+    ///     Three kernels resolve a pointer to another emitter's object on that tick, cache it in
+    ///     their working area and dereference it unconditionally below: pppKeGrvEff and pppKeHmgEff
+    ///     write it to <c>work+0xa0</c> and <c>work+0xa4</c>, pppKeTh likewise. Their constructors
+    ///     are empty stubs and pppCreatePObject does not clear the working area, so a lost keyframe
+    ///     leaves them dereferencing recycled heap rather than merely animating wrong. Age zero is
+    ///     covered by the same test because the first pass is a keyframe too.
+    /// </summary>
+    private static bool is_initialising_call(int obj, int data)
+    {
+        int age = *(int*)(obj + ObjectStepOffset);
+        return age == 0 || age == *(int*)data;
+    }
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_ke_update(int obj, int data, int prog);
@@ -111,7 +137,7 @@ public unsafe sealed partial class Fps60Module
                 _ke_calls++;
                 var counts = _ke_by_name[key];
 
-                if (hold && !advance_this_frame() && *(int*)(obj + ObjectStepOffset) != 0)
+                if (hold && !advance_this_frame() && !is_initialising_call(obj, data))
                 {
                     _ke_held++;
                     _ke_by_name[key] = (counts.Calls + 1, counts.Held + 1);
