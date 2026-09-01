@@ -43,7 +43,10 @@ public unsafe sealed partial class Fps60Module
 
     private bool init_particle_hooks()
     {
-        if (!_config.Particles && !_config.ParticleHold && !_config.FieldParticleHold) return true;
+        // The manager step is one half of the timeline correction, so the start hook is needed
+        // whenever that is on, not only when the old standalone step scaling is.
+        if (!_config.Particles && !_config.ParticleHold && !_config.FieldParticleHold
+            && !_config.ParticleTimeline) return true;
 
         bool ok = hook_or_log("_pppStartPart", EngineAddresses.PppStartPart,
             () => new FhMethodHandle<d_ppp_start_part>(new FhMethodLocation(EngineAddresses.PppStartPart, 0)).hook(this, h_ppp_start_part));
@@ -74,7 +77,9 @@ public unsafe sealed partial class Fps60Module
     private int scale_particle_step(int step)
         // A step of zero is a manager that is not meant to advance; scaling it is meaningless, and
         // rounding a small step to zero would freeze the effect outright.
-        => _config.ParticleHold || step <= 0 ? step : Math.Max(1, (int)Math.Round(step / Scale));
+        => _config.ParticleHold || step <= 0 || !(_config.Particles || _config.ParticleTimeline)
+            ? step
+            : Math.Max(1, (int)Math.Round(step / Scale));
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_ppp_start_part(nint manager, int time_step, nint data, int flags);

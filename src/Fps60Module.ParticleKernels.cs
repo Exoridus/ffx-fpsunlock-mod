@@ -139,6 +139,7 @@ public unsafe sealed partial class Fps60Module
             self = (obj, data, prog) =>
             {
                 _ke_calls++;
+                note_keyframe_grid(data);
                 var counts = _ke_by_name[key];
 
                 if (hold && !advance_this_frame() && !is_initialising_call(obj, data))

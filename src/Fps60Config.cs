@@ -122,6 +122,22 @@ public sealed record Fps60Config
     public bool TextureAnimation { get; init; } = true;
 
     /// <summary>
+    ///     Halve the particle system's own clock: the age step in the dispatcher and, with it, the
+    ///     time step every manager is started with.
+    ///
+    ///     This is the timeline rather than the motion - when a keyframe fires, when a step loops,
+    ///     when an object dies, when the next one is emitted. It is a rate change in the image, and
+    ///     it cannot miss a keyframe: a tag fires on equality, so every tag that works today is a
+    ///     multiple of the old step and the halved sequence is a strict superset of the old one.
+    ///
+    ///     The two halves belong together. Halving only the age would double the standing population
+    ///     - the same emission rate per frame against twice as many frames of life - and halving only
+    ///     the manager step is what earlier attempts did, which changed nothing visible because the
+    ///     motion is not in it.
+    /// </summary>
+    public bool ParticleTimeline { get; init; } = true;
+
+    /// <summary>
     ///     Scale the time step every particle manager is started with. Unlike the held systems this
     ///     is a real retiming: the effect advances half as far per frame and therefore takes the
     ///     same wall clock time as at 30 Hz, with drawing and lifetime untouched.

@@ -182,7 +182,8 @@ public unsafe sealed partial class Fps60Module : FhModule
                      $"{particle_counts()}, {effect_counts()}, {kernel_counts()}, {motion_counts()}, {survey_counts()}, " +
                      $"{overlay_probe_counts()}, {engine_state_counts()}, " +
                      $"{motion_sequence_counts()}, {frame_sequence_counts()}, {lens_sprite_counts()}, " +
-                     $"{texture_animation_counts()} cam_acc={_camera_acc_calls}");
+                     $"{texture_animation_counts()} cam_acc={_camera_acc_calls}, " +
+                     $"{particle_timeline_counts()}");
 
         _frames_at_last_sample = _frames;
         _last_sample = now;
@@ -218,5 +219,8 @@ public unsafe sealed partial class Fps60Module : FhModule
                      $"{adopted:F2} from a measured {fps:F1} fps. Scale is now {adopted / 30f:F2}.");
 
         _measured_framerate = adopted;
+
+        // The image patch has to know the rate, and only now does anyone.
+        patch_particle_timeline();
     }
 }
