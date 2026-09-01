@@ -45,6 +45,7 @@ public unsafe sealed partial class Fps60Module : FhModule
         : 60f / Math.Max(1u, VSyncIntervalTarget);
 
     private static float _measured_framerate;
+    private double _previous_sample_fps;
 
     /// <summary>
     ///     Nominal rates a display actually runs at. The measured value is snapped onto one of these
@@ -208,6 +209,14 @@ public unsafe sealed partial class Fps60Module : FhModule
         }
 
         if (fps < 20 || fps > 400) return;
+
+        // A rate is adopted only once two consecutive samples agree. The first sample of a run falls
+        // inside the boot load and measured 46.7 fps once, which snapped to 50 and set a scale of
+        // 1.67 for a game that was about to run at 60.
+        double previous = _previous_sample_fps;
+        _previous_sample_fps = fps;
+
+        if (previous <= 0 || Math.Abs(fps - previous) / fps > 0.05) return;
 
         float nominal = NominalRates.MinBy(r => Math.Abs(r - fps));
         float adopted = Math.Abs(nominal - fps) / nominal < 0.08f ? nominal : (float)fps;

@@ -44,18 +44,35 @@ public unsafe sealed partial class Fps60Module
 
     private string particle_timeline_counts() => $"kf_offgrid={_offgrid_keyframes}";
 
-    private bool _timeline_patched;
+    private int _timeline_step;
 
     /// <summary>
     ///     Applied once the target framerate is known rather than at init, because at init it is
     ///     only implied by the limiter - and with the limiter removed that implication is wrong.
+    ///
+    ///     Re-applied whenever the rate changes. A one-shot patch looked right and was not: the
+    ///     first measurement of a run happens while the game is still loading, and a boot sample of
+    ///     46.7 fps froze the step at a correction for 50 Hz that the next sample already knew was
+    ///     wrong. Writing again is safe because the journal restores in reverse order, so the
+    ///     original still comes back last.
     /// </summary>
     private void patch_particle_timeline()
     {
-        if (!_config.ParticleTimeline || _timeline_patched) return;
-        _timeline_patched = true;
+        if (!_config.ParticleTimeline) return;
 
-        int step = Math.Max(1, (int)Math.Round(VanillaAgeStep / Scale));
+        // The step must divide the vanilla one exactly, and that is not a preference.
+        //
+        // The whole safety argument is that the halved age sequence contains every value the old one
+        // reached, so no keyframe can be missed - and that only holds for 0x1000 / n. A step of
+        // 0x99A, which is what a scale of 1.67 asks for, makes the ages multiples of 2458 and they
+        // then never equal a keyframe at a multiple of 4096 again. The effect keeps its rate and
+        // loses its program: pyreflies that stop at whatever size their last reached keyframe left
+        // them at, and a fire that burns at the right speed and looks wrong.
+        int divisor = Math.Max(1, (int)Math.Round(Scale));
+        int step = VanillaAgeStep / divisor;
+
+        if (step == _timeline_step) return;
+        _timeline_step = step;
 
         if (step == VanillaAgeStep)
         {
@@ -69,8 +86,12 @@ public unsafe sealed partial class Fps60Module
 
             // Verified before it is written, because a wrong address here rewrites an instruction
             // rather than failing: the three opcode bytes and the vanilla immediate must both match.
+            int current = *(int*)(site + AgeStepImmediateOffset);
+
+            // Either untouched or carrying a step this module wrote earlier; anything else is not
+            // the instruction we think it is.
             bool matches = new ReadOnlySpan<byte>(site, 3).SequenceEqual(AgeStepPrefix)
-                        && *(int*)(site + AgeStepImmediateOffset) == VanillaAgeStep;
+                        && current > 0 && VanillaAgeStep % current == 0;
 
             if (!matches)
             {
