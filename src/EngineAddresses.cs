@@ -183,6 +183,18 @@ public static class EngineAddresses
     public const nint MsEffectProcess = 0x387EC0;
 
     /// <summary>
+    ///     _player_chrs, the base of the battle Chr array, which MsGetChrTop returns unchanged. Zero
+    ///     outside battle, which is what makes the per-actor half of MsEffectProcess inert there.
+    /// </summary>
+    public const nint PlayerChrs = 0xD334CC;
+
+    /// <summary>
+    ///     The non-actor effect overlay's state byte, the global counterpart of Chr+0xdfb. Values 4
+    ///     and 5 mean an overlay is live and MsEffectProcess dispatches into it on both modes.
+    /// </summary>
+    public const nint GlobalEffectOverlayState = 0xD33364;
+
+    /// <summary>
     ///     The old-format character texture animation advance. Dispatched per slot from
     ///     FUN_0077c9c0 on descriptor byte 2; the new format goes to FUN_0077f450 instead.
     ///     Its counters are literal increments - a sprite step of +1 per call and a blink

@@ -30,20 +30,22 @@ public unsafe sealed partial class Fps60Module
     private const uint MotionFlagRated   = 0x100000;
 
     /// <summary>
-    ///     Identity fields on the actor, which this reads as a <c>Chr</c>: model id at +0x4 and the
-    ///     actor id at +0xc. The flag word the advance itself tests sits at +0x194, inside Chr's
-    ///     layout, which is what ties the two together - but nothing in the advance proves the
-    ///     parameter is a Chr, so the identity is logged rather than acted on. An actor that is not
-    ///     one shows up as an implausible pair instead of silently mislabelling the finding.
+    ///     The advance's own identity field: a ushort at offset 0. The parameter is declared
+    ///     <c>ushort *</c> and the function's tail gates on <c>0x403c &lt; *param_1 &lt; 0x4042</c>,
+    ///     so offset 0 holds a small tagged id that the engine itself compares against constants.
+    ///
+    ///     It is NOT the battle <c>Chr</c>. Reading Chr's model id at +0x4 and Chr.id at +0xc
+    ///     produced a fresh pair on nearly every call - 475 distinct identities in thirty seconds -
+    ///     which is what a struct of a different shape looks like when it is read as a Chr. The
+    ///     flag word at +0x194 is common to both and is what made the mistake plausible.
     /// </summary>
-    private const int ChrModelIdOffset = 0x4;
-    private const int ChrIdOffset      = 0xC;
+    private const int MotionTagOffset = 0x0;
 
     /// <summary>
     ///     A scene can run more actors than are worth naming, and the log is not a per-frame trace.
     ///     Past this many distinct identities per path the survey keeps counting and stops naming.
     /// </summary>
-    private const int MotionIdentityCap = 64;
+    private const int MotionIdentityCap = 32;
 
     private long _motion_calls;
     private long _motion_rated;      // 0x40 clear and 0x100000 set: the corrected path
@@ -60,16 +62,17 @@ public unsafe sealed partial class Fps60Module
            $"mot_named={_motion_identities.Count}";
 
     /// <summary>
-    ///     Logs an actor the first time it reaches a given path. The path is part of the key, so an
-    ///     actor that changes classification mid-scene is reported again rather than swallowed -
-    ///     which is itself the interesting case, since the gating bit is meant to arrive with data.
+    ///     Reports an actor the first time a given (path, tag, flags) combination is seen. Keying on
+    ///     the flag word as well as the tag is deliberate: the question is which actors reach the
+    ///     advance without 0x100000, and an actor whose classification changes mid-scene is the
+    ///     interesting case rather than a duplicate. The header bytes go out with it, so the tag can
+    ///     be checked against something rather than trusted.
     /// </summary>
     private void note_motion_actor(string path, nint actor, uint flags)
     {
-        uint model_id = *(uint*)(actor + ChrModelIdOffset);
-        ushort id     = *(ushort*)(actor + ChrIdOffset);
+        ushort tag = *(ushort*)(actor + MotionTagOffset);
 
-        ulong key = ((ulong)path[0] << 56) | ((ulong)model_id << 16) | id;
+        ulong key = ((ulong)path[0] << 56) | ((ulong)flags << 16) | tag;
         if (!_motion_identities.Add(key)) return;
 
         // Capped per path, not overall: the rated path carries nearly every actor and would
@@ -78,7 +81,12 @@ public unsafe sealed partial class Fps60Module
         _motion_named_per_path[path] = named + 1;
         if (named >= MotionIdentityCap) return;
 
-        _logger.Info($"[Fps60] Motion {path}: model_id=0x{model_id:X} id=0x{id:X} flags=0x{flags:X}.");
+        uint head0 = *(uint*)actor;
+        uint head4 = *(uint*)(actor + 4);
+        uint head8 = *(uint*)(actor + 8);
+
+        _logger.Info($"[Fps60] Motion {path}: tag=0x{tag:X4} flags=0x{flags:X8} " +
+                     $"head=[{head0:X8} {head4:X8} {head8:X8}].");
     }
 
     private bool init_motion_survey()

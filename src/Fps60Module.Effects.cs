@@ -51,7 +51,7 @@ public unsafe sealed partial class Fps60Module
         if (mode == EffectAdvanceMode) _effect_advances++;
         else                           _effect_draws++;
 
-        if (_config.EffectHold && mode == EffectAdvanceMode && !advance_this_frame())
+        if (_config.EffectHold && mode == EffectAdvanceMode && !advance_this_frame() && hold_is_inert_below())
         {
             _effect_held++;
             return;
@@ -59,5 +59,28 @@ public unsafe sealed partial class Fps60Module
 
         new FhMethodHandle<d_effect_process>(new FhMethodLocation(EngineAddresses.MsEffectProcess, 0))
             .chain_from(h_effect_process).fnptr?.Invoke(mode);
+    }
+
+    /// <summary>
+    ///     True while skipping the whole of MsEffectProcess skips only the advance.
+    ///
+    ///     The function is not the clean advance/draw pair its two-branch head suggests. Only the
+    ///     head branches on the mode; everything after it runs on both modes and dispatches into the
+    ///     magic overlay modules, at +0xc for the advance and +0x10 for the draw - once per battle
+    ///     actor whose Chr+0xdfb is 4 or 5, then once more for the non-actor overlay. A hook can
+    ///     only skip the call as a whole, so holding mode 0 in battle also skips every overlay's
+    ///     update while mode 1 keeps calling its draw, and the two are halves of one module's state.
+    ///
+    ///     Outside battle both halves are inert - MsGetChrTop returns _player_chrs, which is null,
+    ///     and the global overlay is idle - so the hold there really does only skip the advance.
+    ///     That is where it was measured and where it stays until the advance can be held on its
+    ///     own. The cost is that battle effects run at the presented rate again.
+    /// </summary>
+    private static bool hold_is_inert_below()
+    {
+        if (FhUtil.get_at<nint>(EngineAddresses.PlayerChrs) != 0) return false;
+
+        byte overlay_state = FhUtil.get_at<byte>(EngineAddresses.GlobalEffectOverlayState);
+        return overlay_state is not (4 or 5);
     }
 }
