@@ -21,23 +21,33 @@ namespace Fahrenheit.Mods.Fps60;
 public unsafe sealed partial class Fps60Module
 {
     /// <summary>
-    ///     The step kernels that mutate an object, by RVA. Everything ending in Con, Con2, Des or
-    ///     Draw is left alone: those construct a step or draw one, and neither advances anything.
+    ///     The step kernels that mutate an object, by RVA, and whether holding one is safe.
+    ///     Everything ending in Con, Con2, Des or Draw is absent: those construct a step or draw
+    ///     one, and neither advances anything.
+    ///
+    ///     <c>Hold: false</c> marks the four the Lns draw kernels call themselves -
+    ///     <c>pppKeLnsFlsDraw</c> opens with <c>pppKeLnsFlsUpdate(param_1, param_2, param_3)</c>,
+    ///     and Arnd, Clm and Crn do the same. Their bodies are not motion: they resolve the
+    ///     object's parameter block, copy a word out of it and zero a counter, which is state the
+    ///     draw immediately reads back. Skipping that on a held frame leaves the draw working from
+    ///     a stale pointer, which showed up in a running game as a pyrefly with a lens flare far
+    ///     brighter than it should be. They are still counted, so a scene can be asked whether it
+    ///     uses them.
     /// </summary>
-    private static readonly (string Name, nint Rva)[] KernelUpdates =
+    private static readonly (string Name, nint Rva, bool Hold)[] KernelUpdates =
     [
-        ("pppKeBornRnd2",      0x3588A0), ("pppKeBornRnd3",      0x358A50),
-        ("pppKeBornRnd5",      0x359010), ("pppKeBornRnd6",      0x3592F0),
-        ("pppKeDrct",          0x35E520), ("pppKeGrvEff",        0x359740),
-        ("pppKeGrvTgt",        0x3598A0), ("pppKeHmgEff",        0x359CE0),
-        ("pppKeLnsArndUpdate", 0x35A3C0), ("pppKeLnsClmUpdate",  0x35A790),
-        ("pppKeLnsCrnUpdate",  0x35ABA0), ("pppKeLnsFlsUpdate",  0x35AF80),
-        ("pppKeLnsLpSft",      0x35A020), ("pppKeMatSN",         0x3340F0),
-        ("pppKeMvYpEff",       0x35E400), ("pppKeShpTail",       0x34C570),
-        ("pppKeShpTail2",      0x34E570), ("pppKeShpTail2X",     0x34F5B0),
-        ("pppKeShpTail3",      0x350390), ("pppKeShpTail3X",     0x351D80),
-        ("pppKeShpTailX",      0x34D570), ("pppKeTh",            0x336110),
-        ("pppKeThSft",         0x336F50), ("pppKeThTp",          0x336E40),
+        ("pppKeBornRnd2",      0x3588A0, true ), ("pppKeBornRnd3",      0x358A50, true ),
+        ("pppKeBornRnd5",      0x359010, true ), ("pppKeBornRnd6",      0x3592F0, true ),
+        ("pppKeDrct",          0x35E520, true ), ("pppKeGrvEff",        0x359740, true ),
+        ("pppKeGrvTgt",        0x3598A0, true ), ("pppKeHmgEff",        0x359CE0, true ),
+        ("pppKeLnsArndUpdate", 0x35A3C0, false), ("pppKeLnsClmUpdate",  0x35A790, false),
+        ("pppKeLnsCrnUpdate",  0x35ABA0, false), ("pppKeLnsFlsUpdate",  0x35AF80, false),
+        ("pppKeLnsLpSft",      0x35A020, true ), ("pppKeMatSN",         0x3340F0, true ),
+        ("pppKeMvYpEff",       0x35E400, true ), ("pppKeShpTail",       0x34C570, true ),
+        ("pppKeShpTail2",      0x34E570, true ), ("pppKeShpTail2X",     0x34F5B0, true ),
+        ("pppKeShpTail3",      0x350390, true ), ("pppKeShpTail3X",     0x351D80, true ),
+        ("pppKeShpTailX",      0x34D570, true ), ("pppKeTh",            0x336110, true ),
+        ("pppKeThSft",         0x336F50, true ), ("pppKeThTp",          0x336E40, true ),
     ];
 
     /// <summary>
@@ -82,12 +92,13 @@ public unsafe sealed partial class Fps60Module
 
         bool ok = true;
 
-        foreach ((string name, nint rva) in KernelUpdates)
+        foreach ((string name, nint rva, bool safe) in KernelUpdates)
         {
             // Every kernel is hooked so its call count is known; only the selected ones are held.
             // A scene's own list of steps is the thing worth knowing, and it costs one counter.
-            bool hold = (_config.ParticleKernelOnly.Length == 0
-                         || _config.ParticleKernelOnly.Contains(name, StringComparer.OrdinalIgnoreCase))
+            bool hold = safe
+                        && (_config.ParticleKernelOnly.Length == 0
+                            || _config.ParticleKernelOnly.Contains(name, StringComparer.OrdinalIgnoreCase))
                         && !_config.ParticleKernelExcept.Contains(name, StringComparer.OrdinalIgnoreCase);
 
             string key = name;

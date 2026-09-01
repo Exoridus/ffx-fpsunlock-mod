@@ -11,7 +11,9 @@ namespace Fahrenheit.Mods.Fps60;
 public unsafe sealed partial class Fps60Module
 {
     private long _texanim_draw;
-    private long _screen_texanim_draw;
+    private long  _screen_texanim_draw;
+    private long  _screen_texanim_changes;
+    private ulong _screen_texanim_id;
     private long _uv_scroll;
     private long _texanim_set_enable;
     /// <summary>
@@ -51,6 +53,7 @@ public unsafe sealed partial class Fps60Module
 
     private string survey_counts()
         => $"texanim_draw={_texanim_draw} screen_texanim={_screen_texanim_draw} " +
+           $"sta_changes={_screen_texanim_changes} " +
            $"uv_scroll={_uv_scroll} texanim_enable={_texanim_set_enable} " +
            $"advance_old={_texanim_advance_old_path}";
 
@@ -96,8 +99,38 @@ public unsafe sealed partial class Fps60Module
     private void h_screen_texanim_draw(int table, int bank, int index)
     {
         _screen_texanim_draw++;
+        note_screen_texanim_id(table, bank, index);
+
         new FhMethodHandle<d_screen_texanim_draw>(new FhMethodLocation(EngineAddresses.ScreenTextureAnimationDraw, 0))
             .chain_from(h_screen_texanim_draw).fnptr?.Invoke(table, bank, index);
+    }
+
+    /* How often the animation this call names actually changes.
+     *
+     * The function builds a name with sprintf("%05d_%02d_%03d_%03d", ...) out of two words of the
+     * table entry and hands it to Phyre's TextureAnimationManager, so the name is the animation and
+     * the rate at which it changes is the rate the viewer sees. The call itself runs once per
+     * presented frame, which says nothing on its own - what matters is whether the id advances with
+     * it.
+     *
+     * The read mirrors the original exactly: entry = table + 0x9d9f0 + bank * 0x720 + index * 0x1c,
+     * then two words at +0x24 and +0x34. Every dereference is guarded, because this runs before the
+     * original has validated anything. */
+    private void note_screen_texanim_id(int table, int bank, int index)
+    {
+        if (table == 0) return;
+
+        nint slot = (nint)table + 0x9d9f0 + (nint)bank * 0x720 + (nint)index * 0x1c;
+        int entry = *(int*)slot;
+        if (entry == 0) return;
+
+        ulong id = ((ulong)(*(uint*)((nint)entry + 0x24)) << 32) | *(uint*)((nint)entry + 0x34);
+
+        if (id != _screen_texanim_id)
+        {
+            _screen_texanim_id = id;
+            _screen_texanim_changes++;
+        }
     }
 
     [UnmanagedCallConv(CallConvs = [typeof(CallConvStdcall)])]
