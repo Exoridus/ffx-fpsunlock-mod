@@ -270,6 +270,21 @@ public sealed record Fps60Config
     /// </summary>
     public bool LensSpriteClock { get; init; } = true;
 
+    /// <summary>
+    ///     Hold the new texture animation format's step byte on skipped frames, which is what an
+    ///     animated weapon texture runs on. The byte is signed and its engine values are 1 and 0, so
+    ///     a half step cannot be written; parking it at 0 and restoring the engine's own value is
+    ///     the correction the format allows.
+    /// </summary>
+    public bool TextureAnimationStep { get; init; } = true;
+
+    /// <summary>
+    ///     Log the first calls to MsCameraMoveAcc with all seven arguments. The battle entry camera
+    ///     is an ATEL script that calls camMoveAcc(0, 0, 30, 15) in 540 of 641 encounter scripts, so
+    ///     the logged arguments say directly whether the scaling reached it.
+    /// </summary>
+    public bool SurveyCamera { get; init; } = true;
+
     /// <summary>Log measured present rate and frame delta statistics.</summary>
     public bool Telemetry { get; init; } = true;
 

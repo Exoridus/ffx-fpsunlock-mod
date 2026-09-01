@@ -251,9 +251,22 @@ public unsafe sealed partial class Fps60Module
 
     /* Whether all four trailing arguments are durations is not established; PWarp scales all four and
      * the result is reported as correct, so this follows it until something disagrees. */
+    private long _camera_acc_calls;
+
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     private void h_camera_move_acc(uint camera_id, uint mode_non_ref, uint mode_polar, uint a4, uint a5, uint a6, uint a7)
     {
+        _camera_acc_calls++;
+
+        // The encounter scripts call camMoveAcc(0, 0, 30, 15) in 540 of 641 CamEnter entry points,
+        // so a logged call with those arguments unscaled says the hook fires and the scaling does
+        // not, and no call at all says the hook is not on the path. Nothing else distinguishes the
+        // two, and the battle entry camera is the one place a player notices.
+        if (_config.SurveyCamera && _camera_acc_calls <= 8)
+            _logger.Info($"[Fps60] MsCameraMoveAcc #{_camera_acc_calls}: cam={camera_id} p2={mode_non_ref} " +
+                         $"p3={mode_polar} in={a4},{a5},{a6},{a7} -> out={scale_up(a4)},{scale_up(a5)}," +
+                         $"{scale_up(a6)},{scale_up(a7)} (scale={Scale:F2})");
+
         new FhMethodHandle<d_camera_move_acc>(new FhMethodLocation(EngineAddresses.MsCameraMoveAcc, 0))
             .chain_from(h_camera_move_acc).fnptr!(camera_id, mode_non_ref, mode_polar,
                 scale_up(a4), scale_up(a5), scale_up(a6), scale_up(a7));
