@@ -31,6 +31,32 @@ public unsafe sealed partial class Fps60Module
     /// <summary>True on the frames a held sequence is allowed to advance.</summary>
     private bool advance_this_frame() => _advance_frame;
 
+    /// <summary>
+    ///     The same decision, but per call instead of per presented frame, and deliberately blind to
+    ///     the syncdata pacing.
+    ///
+    ///     A video consumes exactly one decoded picture per call and derives its own clock from how
+    ///     many it has consumed, so what has to be halved is the call, not the frame. Gating on the
+    ///     frame assumes one call per frame; where the engine calls twice - the render section runs
+    ///     max(1, Sg_GetCurExecFrames) times - both calls land on an allowed frame and the video
+    ///     runs at full speed anyway.
+    ///
+    ///     And the syncdata exemption must not reach it. That exemption exists because the engine
+    ///     paces itself through sg_rate in those scenes; a video hangs on the presentation rate
+    ///     instead, so treating a sync-paced scene as needing no correction silently switches the
+    ///     hold off exactly where a cutscene is playing.
+    /// </summary>
+    private bool advance_this_call(ref double carry)
+    {
+        float scale = Math.Max(1f, TargetFramerate / 30f);
+
+        carry += 1.0 / scale;
+        if (carry < 1.0) return false;
+
+        carry -= 1.0;
+        return true;
+    }
+
     private bool init_frame_sequence_hooks()
     {
         bool ok = true;
@@ -90,10 +116,12 @@ public unsafe sealed partial class Fps60Module
 
     private long _texture_video_calls;
     private long _texture_video_held;
+    private double _texture_video_carry;
     private long _blur_transitions;
 
     private string frame_sequence_counts()
-        => $"texvid={_texture_video_calls}/{_texture_video_held} blur_set={_blur_transitions}";
+        => $"texvid={_texture_video_calls}/{_texture_video_held} fmv={_video_calls}/{_video_held} " +
+           $"blur_set={_blur_transitions}";
 
     /* Texture videos are not FMVs and the FMV frameskip does not reach them - Zanarkand coming to
      * life in Dream's End is one. The update runs once per main loop iteration and takes no time
@@ -103,7 +131,7 @@ public unsafe sealed partial class Fps60Module
     {
         _texture_video_calls++;
 
-        if (!advance_this_frame()) { _texture_video_held++; return; }
+        if (!advance_this_call(ref _texture_video_carry)) { _texture_video_held++; return; }
 
         new FhMethodHandle<d_texture_video_update>(new FhMethodLocation(EngineAddresses.GraphicTextureVideoUpdate, 0))
             .chain_from(h_texture_video_update).fnptr?.Invoke();
@@ -149,10 +177,16 @@ public unsafe sealed partial class Fps60Module
      *
      * This is the hook that has to go once real 60 FPS video ships: with a 59.94 asset the update
      * belongs on every frame, and holding it would halve the video's own framerate. */
+    private double _video_carry;
+    private long _video_calls;
+    private long _video_held;
+
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     private void h_video_update()
     {
-        if (!advance_this_frame()) return;
+        _video_calls++;
+
+        if (!advance_this_call(ref _video_carry)) { _video_held++; return; }
 
         new FhMethodHandle<d_video_update>(new FhMethodLocation(EngineAddresses.GraphicVideoUpdate, 0))
             .chain_from(h_video_update).fnptr!();

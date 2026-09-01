@@ -276,12 +276,13 @@ public sealed record Fps60Config
     ///     Overwrite the hardcoded 29.97 the video update loop multiplies its time step by
     ///     (a double in .rdata at 0x74A180). Null leaves it alone.
     ///
-    ///     This is an experiment before it is a feature. The open question is whether the player
-    ///     reads the container's own timestamps at all or only ever this constant: if playback
-    ///     speed follows the value, the constant is the clock and content at 59.94 becomes usable;
-    ///     if nothing changes, the container drives it and the constant is a leftover. WebM stores
-    ///     no framerate field, only per-frame timestamps, so the constant is an assumption about
-    ///     the asset rather than something read from it.
+    ///     Leave this alone. It is not the playback clock and setting it does active harm.
+    ///
+    ///     The player's milliseconds per picture come from the container through a different
+    ///     constant entirely; this one has exactly three readers and all of them convert a
+    ///     millisecond position into the progress index that ATEL sees. Scripts compare that index
+    ///     against hard thresholds - the intro waits for it to reach 4720 - so doubling this value
+    ///     halves every such threshold and cuts each video off halfway through.
     /// </summary>
     public double? VideoTargetFramerate { get; init; }
 

@@ -280,6 +280,12 @@ public static class EngineAddresses
     /// <summary>float. sg_rate as a factor; 1.0 is full speed.</summary>
     public const nint SgRateF = 0x1FCBBE8;
 
+    /// <summary>
+    ///     int. The engine's own count of live particle objects, accumulated during the dispatcher
+    ///     pass and reset each frame - so it has to be read from inside a frame to mean anything.
+    /// </summary>
+    public const nint PobjCounter = 0x1F0FD24;
+
     /// <summary>uint. Particle stop request.</summary>
     public const nint PpvUserStopPartF = 0x1F0FD34;
 

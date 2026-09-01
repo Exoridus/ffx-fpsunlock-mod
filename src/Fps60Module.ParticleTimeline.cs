@@ -42,7 +42,36 @@ public unsafe sealed partial class Fps60Module
 
     private long _offgrid_keyframes;
 
-    private string particle_timeline_counts() => $"kf_offgrid={_offgrid_keyframes}";
+    /// <summary>
+    ///     The engine's own count of live particle objects, accumulated during the dispatcher pass
+    ///     and reset each frame. Sampling it from outside catches a zero almost every time, so it is
+    ///     sampled here once per presented frame and reported as a range.
+    ///
+    ///     This is what separates the two things "the effect escalates" can mean: more objects than
+    ///     vanilla, which is an emission problem, or the same objects drawn wrongly, which is not.
+    /// </summary>
+    private int _pobj_max;
+    private int _pobj_last;
+
+    private void sample_particle_population()
+    {
+        int live = FhUtil.get_at<int>(EngineAddresses.PobjCounter);
+        if (live <= 0) return;
+
+        _pobj_last = live;
+        if (live > _pobj_max) _pobj_max = live;
+    }
+
+    private string particle_timeline_counts()
+    {
+        string counts = $"kf_offgrid={_offgrid_keyframes} pobj={_pobj_last}/max{_pobj_max} " +
+                        $"age_step=0x{_timeline_step:X}";
+
+        // The peak is per telemetry window, so a population that grows over a minute shows as a
+        // rising sequence of maxima rather than one number that has already saturated.
+        _pobj_max = 0;
+        return counts;
+    }
 
     private int _timeline_step;
 

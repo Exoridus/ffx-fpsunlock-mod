@@ -51,11 +51,25 @@ public unsafe sealed partial class Fps60Module
         ("pppKeLnsArndUpdate", 0x35A3C0, false), ("pppKeLnsClmUpdate",  0x35A790, false),
         ("pppKeLnsCrnUpdate",  0x35ABA0, false), ("pppKeLnsFlsUpdate",  0x35AF80, false),
         ("pppKeLnsLpSft",      0x35A020, true ), ("pppKeMatSN",         0x3340F0, true ),
-        ("pppKeMvYpEff",       0x35E400, true ), ("pppKeShpTail",       0x34C570, true ),
+        ("pppKeMvYpEff",       0x35E400, false), ("pppKeShpTail",       0x34C570, true ),
         ("pppKeShpTail2",      0x34E570, true ), ("pppKeShpTail2X",     0x34F5B0, true ),
         ("pppKeShpTail3",      0x350390, true ), ("pppKeShpTail3X",     0x351D80, true ),
         ("pppKeShpTailX",      0x34D570, true ), ("pppKeTh",            0x336110, true ),
-        ("pppKeThSft",         0x336F50, true ), ("pppKeThTp",          0x336E40, true ),
+        ("pppKeThSft",         0x336F50, true ), ("pppKeThTp",          0x336E40, false),
+
+        // The generic integrators, and the reason a pyrefly grew into a fireball. They are not
+        // Ke-prefixed and were never on this list, but they sit in prog_func exactly like the
+        // others, run once per pass, and integrate a constant per call.
+        //
+        // pppSclAccele and pppColAccele are double integrators - rate += acceleration, value +=
+        // rate - so at twice the call rate their error grows with the square of time rather than
+        // linearly. Scale and colour are precisely what the defect showed. They were always running
+        // at double rate; halving the object timeline only let the objects live long enough for the
+        // divergence to become visible.
+        ("pppMove",            0x35BED0, true ), ("pppAccele",          0x35B830, true ),
+        ("pppAngMove",         0x35BFE0, true ), ("pppAngAccele",       0x35B940, true ),
+        ("pppSclMove",         0x35C090, true ), ("pppSclAccele",       0x35B9F0, true ),
+        ("pppColMove",         0x35C480, true ), ("pppColAccele",       0x35BB30, true ),
     ];
 
     /// <summary>
@@ -92,6 +106,47 @@ public unsafe sealed partial class Fps60Module
         return age == 0 || age == *(int*)data;
     }
 
+    /// <summary>
+    ///     Whether this object has advanced far enough to deserve another update.
+    ///
+    ///     Deciding that from a frame counter was wrong once the age step was halved, and wrong in a
+    ///     way that got worse the longer an effect lived. Both patterns are then two-beat - the
+    ///     counter skips every other call, the age crosses a vanilla step every other pass - and
+    ///     their phases are unrelated. Where they line up badly the hold lands on exactly the passes
+    ///     that matter: a trail kernel writes its ring buffer at an index derived from the age, so
+    ///     the slots it never gets to write keep whatever was in them, and the trail fills with stale
+    ///     positions. That is a pyrefly that starts correct and degrades.
+    ///
+    ///     The age is the honest clock here. Running on the vanilla grid gives each object exactly
+    ///     the cadence it was authored for, in its own phase rather than the frame counter's, and it
+    ///     contains every keyframe by construction.
+    ///
+    ///     An object whose age is not on the grid at all - which a loop point that is not a multiple
+    ///     of the step would produce - is never held, because freezing it outright is worse than
+    ///     running it too often.
+    /// </summary>
+    private bool object_may_advance(int obj)
+    {
+        int step = _timeline_step;
+        if (step <= 0 || step >= VanillaAgeStep) return true;
+
+        int age = *(int*)(obj + ObjectStepOffset);
+
+        // An age off the grid has no phase to be in, which a loop point that is not a multiple of
+        // the step produces. Falling through to the frame counter keeps such an object retimed at
+        // the right average rate; returning true would exempt it from the hold entirely, and
+        // measured 2026-09-01 that is what happened - ke_held stopped rising through twenty
+        // thousand further calls while the timeline kept running at half speed. An escape hatch
+        // that becomes the common case silently disables the correction.
+        if (age < 0 || age % step != 0)
+        {
+            _offgrid_ages++;
+            return advance_this_frame();
+        }
+
+        return age % VanillaAgeStep == 0;
+    }
+
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_ke_update(int obj, int data, int prog);
 
@@ -101,6 +156,7 @@ public unsafe sealed partial class Fps60Module
 
     private long _ke_calls;
     private long _ke_held;
+    private long _offgrid_ages;
 
     // Per kernel, so a scene can be asked which steps it actually runs rather than guessed at.
     private readonly Dictionary<string, (long Calls, long Held)> _ke_by_name = [];
@@ -113,7 +169,8 @@ public unsafe sealed partial class Fps60Module
             .Take(6)
             .Select(p => $"{p.Key}={p.Value.Calls}/{p.Value.Held}"));
 
-        return $"ke_calls={_ke_calls} ke_held={_ke_held}" + (busiest.Length > 0 ? $" [{busiest}]" : "");
+        return $"ke_calls={_ke_calls} ke_held={_ke_held} ke_offgrid={_offgrid_ages}"
+             + (busiest.Length > 0 ? $" [{busiest}]" : "");
     }
 
     private bool init_particle_kernel_hooks()
@@ -142,7 +199,12 @@ public unsafe sealed partial class Fps60Module
                 note_keyframe_grid(data);
                 var counts = _ke_by_name[key];
 
-                if (hold && !advance_this_frame() && !is_initialising_call(obj, data))
+                // The age decides while the timeline patch is active, because only it is in phase
+                // with the object; without that patch there is no grid to be in phase with and the
+                // frame counter is all there is.
+                bool may_advance = _config.ParticleTimeline ? object_may_advance(obj) : advance_this_frame();
+
+                if (hold && !may_advance && !is_initialising_call(obj, data))
                 {
                     _ke_held++;
                     _ke_by_name[key] = (counts.Calls + 1, counts.Held + 1);

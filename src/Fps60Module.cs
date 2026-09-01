@@ -150,6 +150,7 @@ public unsafe sealed partial class Fps60Module : FhModule
         // advances a held sequence, the second acts on that decision.
         decide_frame_advance();
         retime_texture_animation();
+        sample_particle_population();
 
         if (_config.Telemetry) sample_present_rate();
 
