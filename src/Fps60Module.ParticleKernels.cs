@@ -31,12 +31,16 @@ public unsafe sealed partial class Fps60Module
     ///
     ///     <c>Hold: false</c> marks the four the Lns draw kernels call themselves -
     ///     <c>pppKeLnsFlsDraw</c> opens with <c>pppKeLnsFlsUpdate(param_1, param_2, param_3)</c>,
-    ///     and Arnd, Clm and Crn do the same. Their bodies are not motion: they resolve the
-    ///     object's parameter block, copy a word out of it and zero a counter, which is state the
-    ///     draw immediately reads back. Skipping that on a held frame leaves the draw working from
-    ///     a stale pointer, which showed up in a running game as a pyrefly with a lens flare far
-    ///     brighter than it should be. They are still counted, so a scene can be asked whether it
-    ///     uses them.
+    ///     and Arnd, Clm and Crn do the same. Holding them is not risky, it is pointless: their
+    ///     entire body sits inside the keyframe test, so on an ordinary tick they do nothing at
+    ///     all, and on a keyframe tick they resolve the shape pointer and seed the sprite
+    ///     accumulator the draw reads back immediately. Skipping that leaves the draw with the
+    ///     init stub's placeholder pointer, which its own guard then turns into an invisible or
+    ///     wrongly bright sprite - which is what a running game showed.
+    ///
+    ///     No time passes in them. The clock of this family is <c>KeLnsShp_Update</c>, which the
+    ///     draw calls and which advances a fixed step per drawn frame; that is scaled instead, in
+    ///     <see cref="h_lens_shape_update"/>.
     /// </summary>
     private static readonly (string Name, nint Rva, bool Hold)[] KernelUpdates =
     [

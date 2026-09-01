@@ -214,6 +214,20 @@ public static class EngineAddresses
     public const nint ToBeDeleteMagicId = 0x864CA4;
 
     /// <summary>
+    ///     The eternal effect set's second entry point, efftOverTbl+0x10. Ghidra names the pair
+    ///     op_effect_run_before and op_effect_run_after: both run FUN_0080cd60 over a different
+    ///     object list, so neither is a draw and both decrement the per-channel wait bytes.
+    /// </summary>
+    public const nint EternalEffectRunAfter = 0x400590;
+
+    /// <summary>
+    ///     KeLnsShp_Update(work). The sprite frame clock of the lens and flare family: adds a fixed
+    ///     0x200 to an accumulator per call and compares it against the current frame's duration.
+    ///     Its four callers are the four Lns draw kernels, so it advances once per drawn frame.
+    /// </summary>
+    public const nint KeLnsShpUpdate = 0x36ACF0;
+
+    /// <summary>
     ///     Ch_SeqFrame(work). The motion sequence VM. Its wait opcode counts raw calls at
     ///     work+0x72a and nothing corrects it.
     /// </summary>

@@ -25,15 +25,31 @@ public unsafe sealed partial class Fps60Module
     private long _effect_held;
 
     private string effect_counts()
-        => $"eff_adv={_effect_advances} eff_draw={_effect_draws} eff_held={_effect_held}";
+        => $"eff_adv={_effect_advances} eff_draw={_effect_draws} eff_held={_effect_held} " +
+           $"eternal={_eternal_calls}/{_eternal_held}";
+
+    private long _eternal_calls;
+    private long _eternal_held;
 
     private bool init_effect_hooks()
     {
         if (!_config.EffectHold && !_config.EffectProbe) return true;
 
-        return hook_or_log("MsEffectProcess", EngineAddresses.MsEffectProcess,
+        bool ok = hook_or_log("MsEffectProcess", EngineAddresses.MsEffectProcess,
             () => new FhMethodHandle<d_effect_process>(new FhMethodLocation(EngineAddresses.MsEffectProcess, 0))
                 .hook(this, h_effect_process));
+
+        // The eternal set's second list has to be held with the first or not at all. Holding one of
+        // the two retimes half its population, which is the defect this module has already shipped
+        // three times.
+        if (_config.EffectHold && _config.EternalEffectHold)
+        {
+            ok &= hook_or_log("eternal effect run_after", EngineAddresses.EternalEffectRunAfter,
+                () => new FhMethodHandle<d_eternal_run>(new FhMethodLocation(EngineAddresses.EternalEffectRunAfter, 0))
+                    .hook(this, h_eternal_run_after));
+        }
+
+        return ok;
     }
 
     /* Cdecl, not StdCall, and the binary is what says so: every ret in this function is a plain
@@ -51,7 +67,8 @@ public unsafe sealed partial class Fps60Module
         if (mode == EffectAdvanceMode) _effect_advances++;
         else                           _effect_draws++;
 
-        if (_config.EffectHold && mode == EffectAdvanceMode && !advance_this_frame() && hold_is_inert_below())
+        if (_config.EffectHold && mode == EffectAdvanceMode && !advance_this_frame()
+            && (_config.EffectHoldInBattle || hold_is_inert_below()))
         {
             _effect_held++;
             return;
@@ -59,6 +76,23 @@ public unsafe sealed partial class Fps60Module
 
         new FhMethodHandle<d_effect_process>(new FhMethodLocation(EngineAddresses.MsEffectProcess, 0))
             .chain_from(h_effect_process).fnptr?.Invoke(mode);
+    }
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void d_eternal_run();
+
+    /* The eternal set's second object list. Its two entry points are not an advance and a draw but
+     * two lists, each run by the same worker and each decrementing its own per-channel wait bytes,
+     * so the first is already held by the mode 0 hold above and this is the other half. */
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private void h_eternal_run_after()
+    {
+        _eternal_calls++;
+
+        if (_config.EffectHold && !advance_this_frame()) { _eternal_held++; return; }
+
+        new FhMethodHandle<d_eternal_run>(new FhMethodLocation(EngineAddresses.EternalEffectRunAfter, 0))
+            .chain_from(h_eternal_run_after).fnptr?.Invoke();
     }
 
     /// <summary>

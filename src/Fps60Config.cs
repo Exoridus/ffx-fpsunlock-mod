@@ -128,6 +128,35 @@ public sealed record Fps60Config
     public bool EffectHold { get; init; } = true;
 
     /// <summary>
+    ///     Hold the effect advance in battle too, rather than only where the call is inert.
+    ///
+    ///     The battle exemption existed because the hook itself used to kill the game before the
+    ///     first splash, which was read as the hold being unsurvivable. It was the signature: the
+    ///     generated binding declares MsEffectProcess without parameters while the function reads
+    ///     its mode from the stack, so the detour handed it garbage. With a cdecl one-argument
+    ///     delegate the hook is ordinary, and the hold is what it was meant to be.
+    ///
+    ///     What to expect: of 581 overlays, 224 have a stub advance (33 C0 C3) and the hold is a
+    ///     precise no-op for them - those effects are driven by character motion instead. Of the
+    ///     357 with a real advance, about 117 read Sg_GetCurExecFrames inside their draw, so their
+    ///     timeline is partly on the other side and a held advance leaves them internally
+    ///     inconsistent rather than merely slower. Look for effects that look wrong, not for
+    ///     effects that are still fast.
+    /// </summary>
+    public bool EffectHoldInBattle { get; init; } = true;
+
+    /// <summary>
+    ///     Hold the eternal effect set's second object list along with the first.
+    ///
+    ///     Its two entry points are not an advance and a draw: both run the same worker over a
+    ///     different object list, and both decrement the per-channel wait bytes that are the set's
+    ///     only clock. Holding the mode 0 call alone therefore retimes half its population. Off by
+    ///     default because the opcode handlers behind that worker are unread, so "a hold is safe"
+    ///     is probable rather than established.
+    /// </summary>
+    public bool EternalEffectHold { get; init; }
+
+    /// <summary>
     ///     Attach the MsEffectProcess hook and count advance and draw calls without holding
     ///     anything. Separates the two failure modes: a hook that the game cannot survive at all,
     ///     and a hold the overlay's state machine cannot survive.
@@ -232,6 +261,14 @@ public sealed record Fps60Config
     ///     the manager array per unload and changes nothing.
     /// </summary>
     public bool OverlayUnloadProbe { get; init; } = true;
+
+    /// <summary>
+    ///     Scale the sprite frame clock of the lens and flare family, which advances a fixed step per
+    ///     drawn frame and is therefore the rhythm of a flare or a background flash. Unlike every
+    ///     other particle correction this is a true scale: no sprite frame is dropped, because the
+    ///     accumulator carries its remainder.
+    /// </summary>
+    public bool LensSpriteClock { get; init; } = true;
 
     /// <summary>Log measured present rate and frame delta statistics.</summary>
     public bool Telemetry { get; init; } = true;
