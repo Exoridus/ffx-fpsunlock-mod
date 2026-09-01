@@ -12,13 +12,24 @@ namespace Fahrenheit.Mods.Fps60;
 public unsafe sealed partial class Fps60Module
 {
     /// <summary>
-    ///     Number of presented frames each held frame must survive. 2 at 60 Hz, 1 at 30 Hz, which
-    ///     disables the hold entirely.
+    ///     Decided once per presented frame and read many times, by every hold in the module. A
+    ///     modulo would tie the holds to whole multiples of 30; the carry below does not, so a
+    ///     framerate that is not a multiple - 75 Hz, or 90 - gets an uneven but correct pattern
+    ///     instead of a rounded and wrong one.
     /// </summary>
-    private int HoldFrames => Math.Max(1, (int)Math.Round(Scale));
+    private bool _advance_frame = true;
+    private double _hold_carry;
+
+    private void decide_frame_advance()
+    {
+        _hold_carry += 1.0 / Math.Max(1f, Scale);
+
+        if (_hold_carry >= 1.0) { _hold_carry -= 1.0; _advance_frame = true; }
+        else                    { _advance_frame = false; }
+    }
 
     /// <summary>True on the frames a held sequence is allowed to advance.</summary>
-    private bool advance_this_frame() => _frames % HoldFrames == 0;
+    private bool advance_this_frame() => _advance_frame;
 
     private bool init_frame_sequence_hooks()
     {

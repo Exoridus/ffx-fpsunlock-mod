@@ -11,6 +11,30 @@ public sealed record Fps60Config
     /// <summary>Force the present path off the engine's 30 Hz vsync interval.</summary>
     public bool Present { get; init; } = true;
 
+    /// <summary>
+    ///     What to write into the engine's frame limiter. 1 is 59.94 Hz, 2 is half of that, and
+    ///     0 removes the limit: the WinMain pump multiplies this value by one frame at 59.94 to get
+    ///     the time it must sleep, so zero means it never sleeps and the game presents as fast as it
+    ///     can.
+    ///
+    ///     Above 60 Hz nothing else in this module has to change. Every correction derives from the
+    ///     measured present rate rather than from a constant, the holds carry a fractional remainder
+    ///     instead of counting whole frames, and the vertical blank correction carries one too - so
+    ///     120 Hz asks for a quarter of a blank per frame and gets 1, 0, 0, 0 rather than a rounded
+    ///     and permanently wrong 1.
+    ///
+    ///     What is not established above 60 Hz is the engine, not the arithmetic: the simulation
+    ///     step, the physics clamp and the overlays have only ever been observed at 30 and 60.
+    /// </summary>
+    public uint PresentInterval { get; init; } = 1;
+
+    /// <summary>
+    ///     Correct for this framerate instead of the measured one. Null measures, which is the right
+    ///     default; set it when the rate is known and the measurement would be disturbed, such as
+    ///     while capturing video or on a machine that cannot hold the target.
+    /// </summary>
+    public double? TargetFramerateOverride { get; init; }
+
     /// <summary>Suppress engine code that resets the flip vsync interval back to 30 Hz.</summary>
     public bool KeepVsyncInterval { get; init; } = true;
 

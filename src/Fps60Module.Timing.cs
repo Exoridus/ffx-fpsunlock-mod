@@ -22,6 +22,9 @@ public unsafe sealed partial class Fps60Module
     // Static because Scale is, and Scale is read from static helpers on hot paths.
     private static bool _sync_aware = true;
 
+    /// <summary>Fractional part of the corrected vertical blank delta, carried across frames.</summary>
+    private double _vblank_carry;
+
     /// <summary>
     ///     Frame counts are stored in 16 bits by every consumer this module scales for - the camera
     ///     track record, the fade, flash and alpha slots. Both overloads clamp, because an unclamped
@@ -216,8 +219,15 @@ public unsafe sealed partial class Fps60Module
         uint delta = FhUtil.get_at<uint>(EngineAddresses.SgVCount) - before;
         if (delta == 0) return;
 
-        // At least one blank per frame, or the rate collapses to zero and animation stops entirely.
-        uint scaled = Math.Max(1u, (uint)Math.Round(delta / Scale));
+        // The counters are integers and the corrected delta is not: at 60 Hz it is 1, at 120 Hz it
+        // is 0.5, and rounding 0.5 up to 1 would leave every animation running at double speed with
+        // no way to tell. The remainder is carried instead, so the counter advances 1, 0, 1, 0 and
+        // the rate averages out exactly. That is what makes this module's correction independent of
+        // the target framerate rather than tied to twice 30.
+        _vblank_carry += delta / Scale;
+
+        uint scaled = (uint)_vblank_carry;
+        _vblank_carry -= scaled;
 
         FhUtil.set_at(EngineAddresses.SgVCount,  before  + scaled);
         FhUtil.set_at(EngineAddresses.SgVCount2, before2 + scaled);

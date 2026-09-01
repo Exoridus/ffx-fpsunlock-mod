@@ -23,7 +23,35 @@ public unsafe sealed partial class Fps60Module : FhModule
         set => FhUtil.set_at(EngineAddresses.SFlipVSyncInterval, value);
     }
 
-    private static float TargetFramerate => 60f / Math.Max(1u, VSyncInterval);
+    /// <summary>
+    ///     What the module writes into the engine's limiter. 1 is 59.94 Hz, 2 is half that, and 0
+    ///     removes the limit entirely - the WinMain pump multiplies this by one frame at 59.94 to
+    ///     get the time it must sleep, so zero means it never sleeps.
+    /// </summary>
+    private static uint _vsync_interval_target = 1;
+    private static uint VSyncIntervalTarget => _vsync_interval_target;
+
+    /// <summary>
+    ///     The rate every correction in this module is derived from, and nothing here assumes it is
+    ///     60. It is the configured override, else the measured present rate snapped to a nominal
+    ///     refresh rate, else what the limiter implies before the first measurement exists.
+    ///
+    ///     Measuring rather than assuming is what makes an unlocked framerate work: at interval 0
+    ///     the engine presents as fast as it can, no global states the rate, and a scale derived
+    ///     from a wrong number is worse than no scale at all.
+    /// </summary>
+    private static float TargetFramerate => _measured_framerate > 0
+        ? _measured_framerate
+        : 60f / Math.Max(1u, VSyncIntervalTarget);
+
+    private static float _measured_framerate;
+
+    /// <summary>
+    ///     Nominal rates a display actually runs at. The measured value is snapped onto one of these
+    ///     when it is close enough, because a scale that drifts with a frame time spike would make
+    ///     every held sequence stutter; a rate far from all of them is used as measured.
+    /// </summary>
+    private static readonly float[] NominalRates = [30f, 50f, 60f, 72f, 75f, 90f, 100f, 120f, 144f, 165f, 240f];
 
     public override bool init(FhModContext mod_context, FileStream global_state_file)
     {
@@ -70,6 +98,8 @@ public unsafe sealed partial class Fps60Module : FhModule
         ok &= init_lens_sprite_hook();
 
         _sync_aware = _config.SyncDataAware;
+        _vsync_interval_target = _config.PresentInterval;
+        if (_config.TargetFramerateOverride is { } forced) _measured_framerate = (float)forced;
 
         // Said first and unconditionally: a config that was looked for in the wrong directory
         // reads as a run with every default, and nothing else in this log distinguishes the two.
@@ -112,11 +142,12 @@ public unsafe sealed partial class Fps60Module : FhModule
     [UnmanagedCallConv(CallConvs = [typeof(CallConvThiscall)])]
     private uint h_frame(nint ptr_this)
     {
-        VSyncInterval = 1;
+        VSyncInterval = VSyncIntervalTarget;
         _frames++;
 
-        // Before the engine's update for this frame, because it decides whether the frame advances
-        // the texture animation step at all.
+        // Both before the engine's update for this frame: the first decides whether this frame
+        // advances a held sequence, the second acts on that decision.
+        decide_frame_advance();
         retime_texture_animation();
 
         if (_config.Telemetry) sample_present_rate();
@@ -143,6 +174,8 @@ public unsafe sealed partial class Fps60Module : FhModule
         if ((now - _last_sample).TotalSeconds < 5) return;
 
         double fps = (_frames - _frames_at_last_sample) / (now - _last_sample).TotalSeconds;
+
+        adopt_measured_rate(fps);
         _logger.Info($"[Fps60] present {fps:F1} fps over the last {(now - _last_sample).TotalSeconds:F1}s, " +
                      $"vsync_interval={VSyncInterval}, keep_fps={KeepFps}, " +
                      $"sg_ratef={FhUtil.get_at<float>(EngineAddresses.SgRateF):F3}, " +
@@ -153,5 +186,37 @@ public unsafe sealed partial class Fps60Module : FhModule
 
         _frames_at_last_sample = _frames;
         _last_sample = now;
+    }
+
+    /// <summary>
+    ///     Takes the measured present rate as the rate to correct for, once it is stable enough to
+    ///     trust. A loading screen or a stall would otherwise move the scale, and a scale that moves
+    ///     retimes a sequence that is already running.
+    /// </summary>
+    private void adopt_measured_rate(double fps)
+    {
+        if (_config.TargetFramerateOverride is { } forced)
+        {
+            if (Math.Abs(_measured_framerate - forced) > 0.01f)
+            {
+                _measured_framerate = (float)forced;
+                _logger.Info($"[Fps60] Target framerate forced to {forced:F2} by config.");
+            }
+
+            return;
+        }
+
+        if (fps < 20 || fps > 400) return;
+
+        float nominal = NominalRates.MinBy(r => Math.Abs(r - fps));
+        float adopted = Math.Abs(nominal - fps) / nominal < 0.08f ? nominal : (float)fps;
+
+        // Only a change worth reacting to moves the scale, so an ordinary sample does nothing.
+        if (Math.Abs(adopted - _measured_framerate) / Math.Max(1f, adopted) < 0.05f) return;
+
+        _logger.Info($"[Fps60] Target framerate {(_measured_framerate == 0 ? "set" : "changed")} to " +
+                     $"{adopted:F2} from a measured {fps:F1} fps. Scale is now {adopted / 30f:F2}.");
+
+        _measured_framerate = adopted;
     }
 }
