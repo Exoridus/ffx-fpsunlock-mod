@@ -166,6 +166,7 @@ public unsafe sealed partial class Fps60Module : FhModule
         advance_overlay_spawn_clock();
         retime_texture_animation();
         sample_particle_population();
+        sample_field_managers();
 
         // Not behind the telemetry flag. This is where the rate every correction derives from is
         // measured, and where the image patches are kept in step with it; only the log line it

@@ -545,6 +545,21 @@ public static class EngineAddresses
     public const nint PpvPartManagers = 0x94E380;
 
     /// <summary>
+    ///     int. Absolute pointer to the field particle group table, zero until field data is loaded.
+    ///     pppFpLoop and its neighbours test it for zero before every use and so must any reader.
+    ///     The group count is the ushort at its +4; the per-group records start at its +0x20 with a
+    ///     stride of 0x50.
+    /// </summary>
+    public const nint PpvFpGroupTable = 0x92C248;
+
+    /// <summary>
+    ///     Field particle manager array, one 0x80-byte entry per group in <see cref="PpvFpGroupTable"/>.
+    ///     +0x00 is the restart countdown, 0xFFFFF000 while the group is dead; +0x10 the time step;
+    ///     +0x1C and +0x1D the two flags _pppRunPartFp reads to decide how the group ends.
+    /// </summary>
+    public const nint PpvFpManagers = 0x92C250;
+
+    /// <summary>
     ///     The <c>test byte ptr [sg_count], 1</c> in __TODrawWaitBtlWinPrepare (0x008A6810) that
     ///     gates the multi-target cursor draw, so its immediate is the blink period. Verified in the
     ///     shipped image as F6 05 F0 BB 3C 02 01, followed by the jump that skips the draw loop.
