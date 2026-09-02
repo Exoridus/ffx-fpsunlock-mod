@@ -290,19 +290,25 @@ public unsafe sealed partial class Fps60Module
     }
 
     /// <summary>
-    ///     Raised only for the length of the chained exec handler, and read only by the movie frame
-    ///     delta detour that handler may call. Thread local because the two are one synchronous call
-    ///     apart on the same stack, which makes the correction independent of whichever thread the
-    ///     ATEL worker happens to be stepped on.
+    ///     The movie branch's whole correction state, thread local as one piece. The flag is raised
+    ///     only for the length of the chained exec handler and read only by the movie frame delta
+    ///     detour that handler may call, one synchronous call away on the same stack; the carry holds
+    ///     the remainder of the value that detour hands back to the engine.
+    ///
+    ///     They are isolated together because isolating only the flag would be incoherent: it asserts
+    ///     that two ATEL workers may be stepped from two threads, and then lets those two threads
+    ///     interleave the one read-modify-write that decides how long a wait lasts.
     /// </summary>
     [ThreadStatic] private static bool _inside_atel_wait_exec;
+    [ThreadStatic] private static double _movie_wait_carry;
 
+    /* Telemetry only, and deliberately not isolated the way the two fields above are. A counter that
+     * loses an increment to a race costs a line in a log, while making them thread local would report
+     * each thread's share instead of the total and hide the very case the isolation is there for.
+     * Nothing the engine sees is derived from them. */
     private long _movie_wait_calls;
     private long _movie_wait_delta;
     private long _movie_wait_scaled;
-
-    /// <summary>Fractional part of the corrected movie frame delta, carried across calls.</summary>
-    private double _movie_wait_carry;
 
     /// <summary>
     ///     Movie branch entries of the ATEL wait, and the raw and corrected movie frame deltas they
@@ -337,7 +343,12 @@ public unsafe sealed partial class Fps60Module
      *
      * The flag keeps this off the other caller, the ATEL camera interpolator, which needs the same
      * correction expressed against a float accumulator rather than this counter. movie_have_camera,
-     * the only other thing the wait calls inside the window, reaches nothing that lands back here. */
+     * the only other thing the wait calls inside the window, reaches nothing that lands back here.
+     *
+     * A delta below zero is passed through unscaled rather than multiplied like a positive one. It
+     * means the manager's frame number moved backwards, which is a movie being restarted rather than
+     * time passing, and the engine reads it as the wait counter growing back. Scaling it would make
+     * the counter grow twice as fast on a transient that is not a duration at all. */
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     private int h_movie_frame_delta()
     {
