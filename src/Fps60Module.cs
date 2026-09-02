@@ -238,7 +238,7 @@ public unsafe sealed partial class Fps60Module : FhModule
                          $"{texture_animation_counts()} cam_acc={_camera_acc_calls} {motion_speed_counts()}, " +
                          $"{cross_fade_counts()}, {atel_wait_counts()}, " +
                          $"{particle_timeline_counts()}, {frame_skip_counts()}, {eternal_calm_counts()}, " +
-                         $"{idle_sway_counts()}, {neck_counts()}, " +
+                         $"{idle_sway_counts()}, {neck_counts()}, {buoyancy_counts()}, " +
                          $"{atel_worker_motion_counts()}, {overlay_spawn_gate_counts()}, " +
                          $"{rate_guard_counts()}");
         }

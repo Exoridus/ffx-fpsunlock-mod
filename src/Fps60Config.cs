@@ -427,6 +427,24 @@ public sealed record Fps60Config
     public bool NeckTracking { get; init; } = true;
 
     /// <summary>
+    ///     Correct the vertical channel of a swimming actor: the buoyancy that lifts it towards the
+    ///     surface, the gravity that pulls it back, the velocity clamp, and the smoothed foot offset
+    ///     the ground clamp is measured against. Five rates, all a step per call, none of them
+    ///     reading the delta Ch_CalcMain is handed - so at 60 Hz a swimmer bobs, sinks and settles
+    ///     twice as fast as it was authored to.
+    ///
+    ///     The correction holds the three fields on skipped frames rather than converting the rates.
+    ///     Two of the five are accelerations and one is a velocity, so a conversion would scale one
+    ///     group by the framerate factor and the other by its square, and three of the five sit on
+    ///     .rdata constants shared with the rest of the executable. The hold picks no constant.
+    ///
+    ///     Gravity mode 2 is reachable only from the ATEL opcode setGravityMode - 129 sites in 29
+    ///     event scripts, none in any battle or monster script - so this only ever fires in field
+    ///     swimming, and the telemetry counter reads zero for almost all of a playthrough.
+    /// </summary>
+    public bool Buoyancy { get; init; } = true;
+
+    /// <summary>
     ///     Correct the ATEL worker's own motion and rotation records, which drive every event
     ///     character, the field camera and every attached map object.
     ///

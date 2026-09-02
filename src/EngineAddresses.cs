@@ -81,6 +81,20 @@ public static class EngineAddresses
     /// <summary>Ch_CalcMain(float delta). The engine passes a fixed delta of 0.033373334.</summary>
     public const nint ChCalcMain = 0x432E90;
 
+    /// <summary>
+    ///     chr. Pointer-valued global holding the base of the Ch work record array, one 0x880 byte
+    ///     record per slot. Allocated once by the scene init and never moved, so a record address
+    ///     taken during a call stays valid for that call.
+    /// </summary>
+    public const nint ChrArray = 0x1FC44E4;
+
+    /// <summary>
+    ///     nb_maxchr. int, the number of Ch work records. Every per-actor loop in the engine runs
+    ///     from chr to chr + nb_maxchr * 0x880 with that stride; the allocation is twice that size,
+    ///     so the count is the loop bound rather than the allocation size.
+    /// </summary>
+    public const nint NbMaxChr = 0x1FC44E0;
+
     /// <summary>Ch_SetMotionSpeed(Actor*, ushort). Animation speed follows motion speed unless KEEP_FPS is set.</summary>
     public const nint ChSetMotionSpeed = 0x42B400;
 

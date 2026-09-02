@@ -94,7 +94,10 @@ public unsafe sealed partial class Fps60Module
                 () => new FhMethodHandle<d_yi_anim_info_init>(new FhMethodLocation(EngineAddresses.YiAnimInfoInit, 0)).hook(this, h_yi_anim_info_init));
         }
 
-        if (_config.CharacterDelta)
+        // Two corrections ride this one hook: the delta rewrite below, and the buoyancy hold, which
+        // brackets the whole call rather than installing a detour of its own. Either flag alone is
+        // reason enough to install it, and the handler acts on each independently.
+        if (_config.CharacterDelta || _config.Buoyancy)
         {
             ok &= hook_or_log("Ch_CalcMain", EngineAddresses.ChCalcMain,
                 () => new FhMethodHandle<d_ch_calc_main>(new FhMethodLocation(EngineAddresses.ChCalcMain, 0)).hook(this, h_ch_calc_main));
@@ -287,12 +290,20 @@ public unsafe sealed partial class Fps60Module
      * the whole Sg_MainLoop body while gElapsedFrameCount_frameSkip is non-zero, and during a
      * syncdata catch-up each of those passes replays one recorded 30 Hz step. Handing it 1/60 there
      * runs character motion at half speed. Scale is 1 in that state, so 1/(30*Scale) gives 1/30 for
-     * the catch-up and 1/60 for ordinary play. */
+     * the catch-up and 1/60 for ordinary play.
+     *
+     * The delta the engine passed is forwarded unchanged when only the buoyancy hold asked for this
+     * hook, so turning the delta rewrite off leaves the argument alone instead of silently keeping
+     * the correction it was turned off to remove. */
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     private void h_ch_calc_main(float delta)
     {
-        new FhMethodHandle<d_ch_calc_main>(new FhMethodLocation(EngineAddresses.ChCalcMain, 0))
-            .chain_from(h_ch_calc_main).fnptr!(1f / (30f * Scale));
+        var original = new FhMethodHandle<d_ch_calc_main>(
+            new FhMethodLocation(EngineAddresses.ChCalcMain, 0)).chain_from(h_ch_calc_main);
+
+        buoyancy_hold_begin();
+        original.fnptr!(_config.CharacterDelta ? 1f / (30f * Scale) : delta);
+        buoyancy_hold_end();
     }
 
     /* ATEL call target 0000, the frame-based wait. A wait of one frame is an idle loop rather than a
