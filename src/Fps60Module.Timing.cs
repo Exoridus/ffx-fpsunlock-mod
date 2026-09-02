@@ -16,8 +16,19 @@ public unsafe sealed partial class Fps60Module
     /// </summary>
     private static float Scale => IsSyncPaced ? 1f : TargetFramerate / 30f;
 
-    private static bool IsSyncPaced
-        => _sync_aware && FhUtil.get_at<uint>(EngineAddresses.IsNeedSync) == 1;
+    private static bool IsSyncPaced => _sync_aware && EngineSyncPaced;
+
+    /// <summary>
+    ///     The engine's syncdata flag on its own, with the module's opt-out left out of it.
+    ///
+    ///     The two are not interchangeable. <see cref="Fps60Config.SyncDataAware"/> decides only
+    ///     whether this module refrains from scaling such a scene; it has no influence on the engine,
+    ///     which throttles its own presentation to the recorded frame times either way. Anything
+    ///     reasoning about how fast frames are actually arriving has to read this one, or it stops
+    ///     seeing the throttle the moment someone turns the exemption off.
+    /// </summary>
+    private static bool EngineSyncPaced
+        => FhUtil.get_at<uint>(EngineAddresses.IsNeedSync) == 1;
 
     // Static because Scale is, and Scale is read from static helpers on hot paths.
     private static bool _sync_aware = true;

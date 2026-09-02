@@ -190,6 +190,21 @@ public unsafe sealed partial class Fps60Module : FhModule
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private TimeSpan _last_sample;
 
+    /// <summary>True once the engine has been seen pacing itself from syncdata during this window.</summary>
+    private bool _rate_window_sync_paced;
+    private long _rate_windows_discarded;
+
+    /// <summary>
+    ///     How many sample windows the rate adoption refused, and whether the engine is pacing itself
+    ///     from the syncdata table at the moment the line is written.
+    ///
+    ///     Cumulative rather than per window, unlike the counters around it: at most one window can be
+    ///     discarded per line, so a per-window count would only ever read 0 or 1, and what a log has
+    ///     to answer afterwards is whether the guard fired at all and how much of the session it ate.
+    /// </summary>
+    private string rate_guard_counts()
+        => $"rate_guard={_rate_windows_discarded} sync={(EngineSyncPaced ? 1 : 0)}";
+
     /// <summary>
     ///     Measures the present rate over a five second window and hands it to the rate adoption.
     ///     Only the log line at the end is telemetry: the measurement itself is what
@@ -199,6 +214,12 @@ public unsafe sealed partial class Fps60Module : FhModule
     /// </summary>
     private void sample_present_rate()
     {
+        // Latched every frame rather than read at the window's two edges. A syncdata scene shorter
+        // than the window would otherwise leave no trace in the one measurement it ruined, and a
+        // window that only overlaps such a scene at one end measures a mixture that is not a
+        // framerate either.
+        if (EngineSyncPaced) _rate_window_sync_paced = true;
+
         TimeSpan now = _clock.Elapsed;
         if ((now - _last_sample).TotalSeconds < 5) return;
 
@@ -219,9 +240,12 @@ public unsafe sealed partial class Fps60Module : FhModule
                          $"{cross_fade_counts()}, {atel_wait_counts()}, " +
                          $"{particle_timeline_counts()}, {frame_skip_counts()}, {eternal_calm_counts()}, " +
                          $"{idle_sway_counts()}, {neck_counts()}, " +
-                         $"{atel_worker_motion_counts()}, {overlay_spawn_gate_counts()}");
+                         $"{atel_worker_motion_counts()}, {overlay_spawn_gate_counts()}, " +
+                         $"{rate_guard_counts()}");
         }
 
+        // After the adoption has read it, so the window the flag describes is the one just measured.
+        _rate_window_sync_paced = false;
         _frames_at_last_sample = _frames;
         _last_sample = now;
     }
@@ -229,7 +253,9 @@ public unsafe sealed partial class Fps60Module : FhModule
     /// <summary>
     ///     Takes the measured present rate as the rate to correct for, once it is stable enough to
     ///     trust. A loading screen or a stall would otherwise move the scale, and a scale that moves
-    ///     retimes a sequence that is already running.
+    ///     retimes a sequence that is already running. A window that overlapped a syncdata scene is
+    ///     discarded outright, because the engine throttles presentation itself there and the number
+    ///     measured is the recording's cadence rather than the display's.
     /// </summary>
     private void adopt_measured_rate(double fps)
     {
@@ -241,6 +267,27 @@ public unsafe sealed partial class Fps60Module : FhModule
                 _logger.Info($"[Fps60] Target framerate forced to {forced:F2} by config.");
             }
 
+            return;
+        }
+
+        // A window that touched a syncdata scene is not a measurement of the display's rate, and it
+        // is discarded rather than merely disbelieved.
+        //
+        // While g_isNeedSync is set, FUN_00821f90 spins until real time has caught up with the
+        // recorded PS2 frame times whenever the recording is ahead, and updateFFX does not return to
+        // this module's chain point until the whole catch-up count is drained - so presentation, not
+        // just the simulation, runs at the recording's roughly 30 Hz cadence. Two such windows agree
+        // with each other to well within five percent, which is all the pairing test asks for, and
+        // the rate would snap to a nominal 30. Scale would then be 1 for the rest of the session:
+        // every hold stops holding, every scaled duration stops being scaled, and since this method
+        // is the only writer of the rate, nothing observes the scene ending.
+        //
+        // Zeroing the previous sample is the other half of it. The pairing test compares adjacent
+        // windows, and a clean window either side of a discarded one is not adjacent to anything.
+        if (_rate_window_sync_paced)
+        {
+            _rate_windows_discarded++;
+            _previous_sample_fps = 0;
             return;
         }
 
