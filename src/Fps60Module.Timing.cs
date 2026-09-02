@@ -93,6 +93,15 @@ public unsafe sealed partial class Fps60Module
         {
             ok &= hook_or_log("ATEL wait init", EngineAddresses.AtelWaitInit,
                 () => new FhMethodHandle<d_atel_wait_init>(new FhMethodLocation(EngineAddresses.AtelWaitInit, 0)).hook(this, h_atel_wait_init));
+
+            // Neither of the two does anything without the other: the exec detour only raises a flag,
+            // and the delta detour only reads it. Either one failing therefore leaves the movie branch
+            // uncorrected rather than half corrected, so they need no cross-check the way the
+            // cross-fade hold does.
+            ok &= hook_or_log("ATEL wait exec", EngineAddresses.AtelWaitExec,
+                () => new FhMethodHandle<d_atel_wait_exec>(new FhMethodLocation(EngineAddresses.AtelWaitExec, 0)).hook(this, h_atel_wait_exec));
+            ok &= hook_or_log("movie frame delta", EngineAddresses.MovieFrameDelta,
+                () => new FhMethodHandle<d_movie_frame_delta>(new FhMethodLocation(EngineAddresses.MovieFrameDelta, 0)).hook(this, h_movie_frame_delta));
         }
 
         if (_config.Camera)
@@ -154,6 +163,14 @@ public unsafe sealed partial class Fps60Module
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int d_atel_pop_int(nint work, nint stack);
+
+    /* The dispatcher calls every exec handler as (worker, storage) and reads a four byte result, so
+     * the return is an int rather than a bool: it is passed straight back and never inspected here. */
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int d_atel_wait_exec(nint work, int* storage);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int d_movie_frame_delta();
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_camera_move_frame(uint camera_id, uint arg2, uint arg3, uint frames, uint arg5);
@@ -270,6 +287,75 @@ public unsafe sealed partial class Fps60Module
             .fnptr!(work, stack);
 
         *storage = frames != 1 ? (int)(frames * Scale) : frames;
+    }
+
+    /// <summary>
+    ///     Raised only for the length of the chained exec handler, and read only by the movie frame
+    ///     delta detour that handler may call. Thread local because the two are one synchronous call
+    ///     apart on the same stack, which makes the correction independent of whichever thread the
+    ///     ATEL worker happens to be stepped on.
+    /// </summary>
+    [ThreadStatic] private static bool _inside_atel_wait_exec;
+
+    private long _movie_wait_calls;
+    private long _movie_wait_delta;
+    private long _movie_wait_scaled;
+
+    /// <summary>Fractional part of the corrected movie frame delta, carried across calls.</summary>
+    private double _movie_wait_carry;
+
+    /// <summary>
+    ///     Movie branch entries of the ATEL wait, and the raw and corrected movie frame deltas they
+    ///     subtracted. All zero outside the four movies movie_have_camera admits.
+    /// </summary>
+    private string atel_wait_counts()
+        => $"atelmv={_movie_wait_calls}/{_movie_wait_delta}/{_movie_wait_scaled}";
+
+    /* Nothing but the flag. The exec handler's normal branch is the hot one - 53,676 call sites reach
+     * this call target - and it is already correct, so re-implementing the body in order to reach the
+     * movie branch would put the path that works at risk to fix the one that does not. */
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private int h_atel_wait_exec(nint work, int* storage)
+    {
+        _inside_atel_wait_exec = true;
+
+        int result = new FhMethodHandle<d_atel_wait_exec>(new FhMethodLocation(EngineAddresses.AtelWaitExec, 0))
+            .chain_from(h_atel_wait_exec).fnptr!(work, storage);
+
+        _inside_atel_wait_exec = false;
+        return result;
+    }
+
+    /* The movie branch of the wait subtracts elapsed movie frames instead of one, and the counter it
+     * subtracts them from was multiplied by Scale at init, so a wait of N frames outlasts N movie
+     * frames. Correcting the counter is not an option: it is the same counter the normal branch walks
+     * down one at a time, and the branch is chosen per call rather than per wait.
+     *
+     * The delta is 0 or 1 per call, so it is multiplied and never divided - dividing it would floor to
+     * zero every call and the wait would never end. The remainder is carried the way the vertical blank
+     * delta is, so a non-integer Scale averages out instead of truncating a fifth of the movie away.
+     *
+     * The flag keeps this off the other caller, the ATEL camera interpolator, which needs the same
+     * correction expressed against a float accumulator rather than this counter. movie_have_camera,
+     * the only other thing the wait calls inside the window, reaches nothing that lands back here. */
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private int h_movie_frame_delta()
+    {
+        int delta = new FhMethodHandle<d_movie_frame_delta>(new FhMethodLocation(EngineAddresses.MovieFrameDelta, 0))
+            .chain_from(h_movie_frame_delta).fnptr!();
+
+        if (!_inside_atel_wait_exec) return delta;
+
+        _movie_wait_calls++;
+        if (delta <= 0) return delta;
+
+        _movie_wait_delta += delta;
+        _movie_wait_carry += delta * Scale;
+
+        int scaled = (int)_movie_wait_carry;
+        _movie_wait_carry -= scaled;
+        _movie_wait_scaled += scaled;
+        return scaled;
     }
 
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]

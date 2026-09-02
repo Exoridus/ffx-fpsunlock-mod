@@ -41,7 +41,11 @@ public sealed record Fps60Config
     /// <summary>Feed the character update a delta derived from the measured present interval.</summary>
     public bool CharacterDelta { get; init; } = true;
 
-    /// <summary>Scale ATEL frame waits to the active refresh rate.</summary>
+    /// <summary>
+    ///     Scale ATEL frame waits to the active refresh rate. Covers both halves of call target 0000:
+    ///     the frame count the init handler stores, and the movie-frame delta the exec handler
+    ///     subtracts from it while a movie with its own camera is playing.
+    /// </summary>
     public bool AtelWaits { get; init; } = true;
 
     /// <summary>Retime camera move durations and accelerations.</summary>

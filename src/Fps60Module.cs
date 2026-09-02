@@ -188,7 +188,7 @@ public unsafe sealed partial class Fps60Module : FhModule
                      $"{motion_sequence_counts()}, " +
                      $"{frame_sequence_counts()}, {lens_sprite_counts()}, " +
                      $"{texture_animation_counts()} cam_acc={_camera_acc_calls} {motion_speed_counts()}, " +
-                     $"{cross_fade_counts()}, " +
+                     $"{cross_fade_counts()}, {atel_wait_counts()}, " +
                      $"{particle_timeline_counts()}");
 
         _frames_at_last_sample = _frames;

@@ -146,8 +146,28 @@ public static class EngineAddresses
     /// </summary>
     public const nint AtelWaitInit = 0x45C3E0;
 
-    /// <summary>Exec handler of ATEL call target 0000.</summary>
+    /// <summary>
+    ///     Exec handler of ATEL call target 0000, called once per pass with the counter the init
+    ///     handler stored. Cdecl, two arguments, of which only the second (the counter) is read;
+    ///     both returns are a plain c3.
+    ///
+    ///     It normally decrements the counter by one, so scaling the counter at init is the whole
+    ///     correction. It does not while gMoviePlay is set and movie_have_camera agrees: there it
+    ///     subtracts the movie-frame delta at 0x245F40 instead, which is wall-clock and therefore
+    ///     already at the right rate. A counter scaled at init then takes twice as many movie
+    ///     frames to run out.
+    /// </summary>
     public const nint AtelWaitExec = 0x45C570;
+
+    /// <summary>
+    ///     Movie frames elapsed since the FMV manager last latched its own frame number:
+    ///     PhyFMVPlayerManager+0x6D8 minus +0x6E0. Cdecl, no arguments, and a pure read - the two
+    ///     fields are written elsewhere, so calling it has no effect on anything.
+    ///
+    ///     Its other caller is the ATEL camera interpolator at 0x468930, which adds the same delta
+    ///     to a float frame accumulator under the same movie-camera condition.
+    /// </summary>
+    public const nint MovieFrameDelta = 0x245F40;
 
     /// <summary>AtelPopStackInteger(worker, stack).</summary>
     public const nint AtelPopStackInteger = 0x46DE90;
