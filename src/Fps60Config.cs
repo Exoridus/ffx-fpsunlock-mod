@@ -392,6 +392,17 @@ public sealed record Fps60Config
     /// </summary>
     public bool SurveyCamera { get; init; } = true;
 
+    /// <summary>
+    ///     Correct the Eternal Calm copyright card, which Sg_MainLoop advances once per pass: its
+    ///     alpha ramp and the 0x130 frame counter that ends the sequence both run at the presented
+    ///     rate, so at 60 Hz the card fades in twice too fast and disappears after 5 seconds rather
+    ///     than 10.
+    ///
+    ///     The correction is a half-rate detour rather than a hold, because skipping the call would
+    ///     leave the frame with no card drawn at all.
+    /// </summary>
+    public bool EternalCalmCard { get; init; } = true;
+
     /// <summary>Log measured present rate and frame delta statistics.</summary>
     public bool Telemetry { get; init; } = true;
 

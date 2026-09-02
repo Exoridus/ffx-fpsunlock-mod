@@ -474,4 +474,35 @@ public static class EngineAddresses
     ///     express is the per-slot hold in <see cref="Fps60Config.TextureAnimationStep"/>.
     /// </summary>
     public const nint ChTextureSetAnimTimer = 0x43D070;
+
+    // --- Eternal Calm copyright card ---
+
+    /// <summary>
+    ///     void ToDrawEternalCalmCopyRight(int frames). Cdecl with one argument, measured: the
+    ///     function ends in a plain c3 and the only call site cleans with add esp,4.
+    ///
+    ///     The function catalog says it takes no argument, and that is wrong. Its one call site in
+    ///     Sg_MainLoop reads the counter into eax, increments it, pushes eax, and only then stores
+    ///     eax to the global - so the argument is a register push with no data reference behind it,
+    ///     and the call-site argument counter never saw one. The decompiled body recovers the
+    ///     parameter and reads it at [ebp+8], which is the disagreement that gives it away.
+    ///
+    ///     The argument is a phase clock for the card's alpha: below 0x20 the alpha ramps up, below
+    ///     0x110 it holds at 0x80, above that it ramps down. The step itself is per call, not per
+    ///     unit of the argument.
+    /// </summary>
+    public const nint ToDrawEternalCalmCopyRight = 0x504A70;
+
+    /// <summary>
+    ///     int. The Eternal Calm card's frame counter. Sg_MainLoop is its only writer and holds its
+    ///     only two readers: the increment that feeds the call, and the compare against 0x130 that
+    ///     sets IsEternalCalmOver to 2 once the card has been up for 304 frames.
+    /// </summary>
+    public const nint EternalCalmCardFrames = 0xEFB780;
+
+    /// <summary>
+    ///     int. The Eternal Calm card's alpha, 0 to 0x80. ToDrawEternalCalmCopyRight is the only
+    ///     function that reads or writes it, and it is the only state the call leaves behind.
+    /// </summary>
+    public const nint EternalCalmCardAlpha = 0x1471664;
 }
