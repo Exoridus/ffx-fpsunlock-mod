@@ -34,12 +34,24 @@ public unsafe sealed partial class Fps60Module
     /// </summary>
     private bool _acc_set_alpha_reentered;
 
+    /// <summary>
+    ///     Whether the Sg_AccSetAlpha detour is installed, and therefore whether the flag above can
+    ///     ever be raised. Set by init_timing_hooks, which runs first.
+    /// </summary>
+    private bool _acc_set_alpha_hooked;
+
     private long _cross_fade_steps;
-    private long _cross_fade_held;
+    private long _cross_fade_held_frames;
+    private long _cross_fade_restores;
     private long _cross_fade_reentrant;
 
+    /// <summary>
+    ///     Stepping passes, of those the ones this frame was not allowed to advance, of those the
+    ///     ones actually put back, and how often the re-entrancy guard took the restore away. The
+    ///     third and fourth always sum to the second; a non-zero fourth is the guard doing its job.
+    /// </summary>
     private string cross_fade_counts()
-        => $"xfade={_cross_fade_steps}/{_cross_fade_held}/{_cross_fade_reentrant}";
+        => $"xfade={_cross_fade_steps}/{_cross_fade_held_frames}/{_cross_fade_restores}/{_cross_fade_reentrant}";
 
     /// <summary>
     ///     Whether the hold is actually in place, which is what the Sg_AccSetAlpha detour scales on
@@ -53,6 +65,16 @@ public unsafe sealed partial class Fps60Module
     private bool init_cross_fade_hook()
     {
         if (!_config.CrossFadeHold) return true;
+
+        // Without the setter detour the re-entrancy guard cannot fire, and the hold would put back
+        // an alpha the engine had just cleared and leave the blur on screen. The uncorrected ramp
+        // that skipping the hold leaves behind is the lesser of the two.
+        if (!_acc_set_alpha_hooked)
+        {
+            _logger.Error("[Fps60] Sg_AccSetAlpha is not hooked, so the cross-fade hold has no " +
+                          "re-entrancy guard and was not installed.");
+            return false;
+        }
 
         _cross_fade_hold_active = hook_or_log("Sg_DrawFilter", EngineAddresses.SgDrawFilter,
             () => new FhMethodHandle<d_draw_filter>(new FhMethodLocation(EngineAddresses.SgDrawFilter, 0))
@@ -85,6 +107,7 @@ public unsafe sealed partial class Fps60Module
 
         bool hold = counter != 0 && !advance_this_frame();
         if (counter != 0) _cross_fade_steps++;
+        if (hold) _cross_fade_held_frames++;
 
         _acc_set_alpha_reentered = false;
         original.fnptr!();
@@ -95,6 +118,6 @@ public unsafe sealed partial class Fps60Module
 
         FhUtil.set_at(EngineAddresses.CrossFadeSlot0Counter, counter);
         FhUtil.set_at(EngineAddresses.CrossFadeSlot0Alpha, alpha);
-        _cross_fade_held++;
+        _cross_fade_restores++;
     }
 }

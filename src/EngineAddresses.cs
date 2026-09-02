@@ -124,7 +124,8 @@ public static class EngineAddresses
     public const nint SgAccSetAlpha = 0x42BD90;
 
     /// <summary>
-    ///     Sg_DrawFilter(). Cdecl and void, measured: a plain c3 at 0x0082C276, and its one call
+    ///     Sg_DrawFilter(). Cdecl and void, measured: a plain c3 at 0x0082C277, closing the
+    ///     8b e5 5d c3 epilogue at 0x0082C274, and its one call
     ///     site in Sg_MainLoop pushes nothing and cleans nothing. Runs once per main loop pass and
     ///     steps all five filter slots.
     /// </summary>

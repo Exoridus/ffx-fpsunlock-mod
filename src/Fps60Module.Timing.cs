@@ -111,11 +111,13 @@ public unsafe sealed partial class Fps60Module
 
         // The cross-fade setter is the only place the slot 0 hold can see the engine re-entering
         // Sg_AccSetAlpha, so it is installed whenever either of the two corrections is on. With
-        // CrossFadeHold set it stops scaling and only carries that flag.
+        // CrossFadeHold set it stops scaling and only carries that flag, which is why the hold
+        // reads the result rather than assuming the install took.
         if (_config.Fades || _config.CrossFadeHold)
         {
-            ok &= hook_or_log("Sg_AccSetAlpha", EngineAddresses.SgAccSetAlpha,
+            _acc_set_alpha_hooked = hook_or_log("Sg_AccSetAlpha", EngineAddresses.SgAccSetAlpha,
                 () => new FhMethodHandle<d_acc_set_alpha>(new FhMethodLocation(EngineAddresses.SgAccSetAlpha, 0)).hook(this, h_acc_set_alpha));
+            ok &= _acc_set_alpha_hooked;
         }
 
         if (_config.Motion)
