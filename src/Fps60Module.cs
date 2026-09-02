@@ -107,6 +107,7 @@ public unsafe sealed partial class Fps60Module : FhModule
         ok &= init_idle_sway_hook();
         ok &= init_neck_tracking_hook();
         ok &= init_atel_worker_motion_hooks();
+        ok &= init_field_particle_restart_hook();
 
         // Before the game's own entry point runs, so before any magic overlay can have been loaded
         // and snapshotted the slot this rewrites.
@@ -231,6 +232,7 @@ public unsafe sealed partial class Fps60Module : FhModule
            $"{particle_timeline_counts()}, {frame_skip_counts()}, {eternal_calm_counts()}, " +
            $"{idle_sway_counts()}, {neck_counts()}, {buoyancy_counts()}, " +
            $"{atel_worker_motion_counts()}, {overlay_spawn_gate_counts()}, " +
+           $"{field_restart_counts()}, " +
            $"{rate_guard_counts()}";
 
     private void sample_present_rate()

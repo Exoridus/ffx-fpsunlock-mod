@@ -335,6 +335,17 @@ public static class EngineAddresses
     public const nint PppRunPartFp = 0x3123D0;
 
     /// <summary>
+    ///     pppFpLoop. Void, no arguments, and it ends on a plain ret, so the caller cleans. The field
+    ///     particle pass: one iteration per group, the view cylinder test, then the advance and the
+    ///     draw, both of which are built into the same packet the function measures afterwards.
+    ///
+    ///     It carries a restart countdown at each manager's +0x00 which it decrements once per pass
+    ///     with no time term: while the result is still zero or above the group is skipped entirely,
+    ///     and at -1 every object is freed and the group is started again.
+    /// </summary>
+    public const nint PppFpLoop = 0x329BA0;
+
+    /// <summary>
     ///     MsEffectProcess(mode). Cdecl, measured: every ret in the function is a plain c3.
     ///
     ///     Mode 0 advances every active effect and mode 1 draws them, and the discrimination holds
@@ -546,9 +557,12 @@ public static class EngineAddresses
 
     /// <summary>
     ///     int. Absolute pointer to the field particle group table, zero until field data is loaded.
-    ///     pppFpLoop and its neighbours test it for zero before every use and so must any reader.
     ///     The group count is the ushort at its +4; the per-group records start at its +0x20 with a
     ///     stride of 0x50.
+    ///
+    ///     Any reader has to test it for zero. pppFpLoop itself does not: it dereferences the count
+    ///     directly and relies on g_FpLoopFlag, which pppSetFpPdt sets in the same call that fills
+    ///     this in. Its neighbours, which have no such outer gate, all test it.
     /// </summary>
     public const nint PpvFpGroupTable = 0x92C248;
 
