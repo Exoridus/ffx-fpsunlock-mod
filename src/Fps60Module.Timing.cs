@@ -51,34 +51,6 @@ public unsafe sealed partial class Fps60Module
     private static ushort scale_down(ushort speed)
         => speed == 0 ? (ushort)0 : (ushort)Math.Max(1, (int)(speed / Scale));
 
-    /// <summary>Actor flags. Bit 0x100000 marks an actor whose motion advance the engine scales itself.</summary>
-    private const int ActorFlagsOffset = 0x194;
-    private const uint ActorFlagEngineScaledMotion = 0x100000;
-
-    /// <summary>
-    ///     True when the engine applies sg_rate to this actor's motion advance on its own, in which
-    ///     case scaling the speed on the way in would correct it twice.
-    ///
-    ///     The advance at 0x00838d10 guards that multiplication with both KEEP_FPS and the actor's
-    ///     own flag 0x100000, which reads as "an actor without the flag is never corrected, so the
-    ///     module must correct it". Acting on that made things worse: a cutscene ran at half speed
-    ///     and then stalled outright.
-    ///
-    ///     Nothing else corrects those actors, and that is not the reason to leave them alone. They
-    ///     are actors a cutscene script opted out through ChEvent.setKeepFps, and the scene's own
-    ///     timing counts on their motion advancing once per call, so halving their step desynchronises
-    ///     the scene from the motion it waits on. The decision therefore stays on KEEP_FPS alone, and
-    ///     <see cref="Fps60Config.MotionPerActor"/> is kept only to measure one scene at a time.
-    /// </summary>
-    private bool engine_corrects_motion(nint ptr_actor)
-    {
-        if (KeepFps == 0) return false;
-        if (!_config.MotionPerActor) return true;
-
-        return ptr_actor != 0
-            && (*(uint*)(ptr_actor + ActorFlagsOffset) & ActorFlagEngineScaledMotion) != 0;
-    }
-
     private bool init_timing_hooks()
     {
         bool ok = true;
@@ -408,10 +380,9 @@ public unsafe sealed partial class Fps60Module
      * the result is reported as correct, so this follows it until something disagrees. */
     private long _camera_acc_calls;
     private long _motion_speed_calls;
-    private long _motion_speed_scaled;
 
     private string motion_speed_counts()
-        => $"mspeed={_motion_speed_calls}/{_motion_speed_scaled}";
+        => $"mspeed={_motion_speed_calls}";
 
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     private void h_camera_move_acc(uint camera_id, uint mode_non_ref, uint mode_polar, uint a4, uint a5, uint a6, uint a7)
@@ -465,26 +436,28 @@ public unsafe sealed partial class Fps60Module
             .chain_from(h_tk_set_fade_out).fnptr!(scale_up(frames));
     }
 
-    /* Animation speed follows motion speed unless keep-FPS is asserted, in which case the engine
-     * already retimes animations off sg_rate and scaling here would slow them twice.
+    /* Passes the authored speed through. A rate correction must not be written here, and the reason
+     * is the field rather than the arithmetic.
      *
-     * The engine also carries a per-actor keep-FPS bit, and the advance requires both it and the
-     * global flag. This honours the global one only: an actor without the bit was opted out by its
-     * scene, so retiming it here would overrule that scene rather than correct it. */
+     * Ch_SetMotionSpeed writes actor+0x750, and nothing resets it: Ch_SetMotionSeq rewrites the
+     * per-motion multiplier at +0x754 on every motion change and leaves +0x750 alone, so a value
+     * written once outlives the motion, the scene and the flag state that justified it. The engine
+     * decides whether to rate-correct an actor from the global KEEP_FPS and the actor's own bit
+     * 0x100000, and it decides that per call, from state a script can change at any time. Encoding
+     * that decision into a persistent field means the module commits to an answer that the engine
+     * is free to contradict a few instructions later, and it then corrects the same actor twice for
+     * the rest of the scene. No gate on the state at write time can avoid it, because the state
+     * being gated on is not the state that will be true when the value is read.
+     *
+     * The correction therefore lives at the advance, where the same decision is taken per call and
+     * leaves nothing behind. See Fps60Module.MotionSurvey. */
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
-    /* KEEP_FPS alone does not mean the engine corrects the actor. The motion advance computes
-     * (speed * factor >> 8) * scale / 0x1e00 and only then, guarded by BOTH Sg_GetKeepFps() and the
-     * actor's own flag 0x100000 at +0x194, multiplies by sg_rate. An actor without that flag is
-     * never corrected by the engine, so skipping the scale on the global flag alone left it running
-     * at double speed - which is what put the field NPCs out of step while Tidus was right. */
     private void h_set_motion_speed(nint ptr_actor, ushort speed)
     {
-        _motion_speed_calls++;
-
         // How many motion speeds this module ever sees is the coverage question behind "some
         // animations are still fast": an actor whose speed is set from loaded data or left at its
-        // default never passes through here, and the advance then runs it at the presented rate.
-        if (!engine_corrects_motion(ptr_actor)) { speed = scale_down(speed); _motion_speed_scaled++; }
+        // default never passes through here.
+        _motion_speed_calls++;
 
         new FhMethodHandle<d_set_motion_speed>(new FhMethodLocation(EngineAddresses.ChSetMotionSpeed, 0))
             .chain_from(h_set_motion_speed).fnptr!(ptr_actor, speed);

@@ -18,8 +18,8 @@ namespace Fahrenheit.Mods.Fps60;
 ///     So two of the three paths cannot be corrected by KEEP_FPS at all. The first is gated on a bit
 ///     Ch_Allocate sets on every actor and only ChEvent.setKeepFps clears, so an actor that reaches
 ///     the advance without it was opted out by a cutscene script rather than left out by its data.
-///     Forcing the correction for every actor was tried and made a cutscene run at half speed and
-///     then stall, so the answer is not "set it everywhere". This counts which path each actor
+///     The global half of the gate is the one that moves in practice: it is clear for whole scenes
+///     at a time, and while it is, no actor is corrected at all. This counts which path each actor
 ///     actually takes, which is the measurement that was missing.
 ///
 ///     The counts alone say how many actors run uncorrected but not which, so each path also names
@@ -112,9 +112,15 @@ public unsafe sealed partial class Fps60Module
     ///     advance without 0x100000, and an actor whose classification changes mid-scene is the
     ///     interesting case rather than a duplicate. The header bytes go out with it, so the tag can
     ///     be checked against something rather than trusted.
+    ///
+    ///     Gated on the survey flag rather than on the hook being installed. The hook is installed
+    ///     for the correction as well now, and naming every actor in a scene is a measurement, not
+    ///     something a default run should be writing to the log.
     /// </summary>
     private void note_motion_actor(string path, nint actor, uint flags)
     {
+        if (!_config.MotionSurvey) return;
+
         ushort tag = *(ushort*)(actor + MotionTagOffset);
 
         ulong key = ((ulong)path[0] << 56) | ((ulong)flags << 16) | tag;
@@ -140,9 +146,13 @@ public unsafe sealed partial class Fps60Module
     ///
     ///     What to look for: an actor whose motion-running flag has gone to 0 while its clip time
     ///     equals its clip end truncated to a whole frame - printed as PARKED - has run its portion
-    ///     to the end and stopped on the last pose. A plain-path actor doing that partway through a
-    ///     scene is the double-speed advance confirmed outright, because the script's wait then runs
-    ///     on to its authored length and hard cuts away from a pose the actor has been holding.
+    ///     to the end and stopped on the last pose. An uncorrected actor doing that partway through
+    ///     a scene is the double-speed advance confirmed outright, because the script's wait then
+    ///     runs on to its authored length and hard cuts away from a pose the actor has been holding.
+    ///
+    ///     Sampled for every actor the engine's gate excludes, not only for the ones a script opted
+    ///     out by name. The gate's global half is the one that is normally clear, so a sample taken
+    ///     on the per-actor bit alone reports nothing in most scenes.
     ///
     ///     Called after the advance rather than before it, so a clamp the advance performs on this
     ///     frame is reported on the frame it happens.
@@ -171,7 +181,7 @@ public unsafe sealed partial class Fps60Module
 
         nint name = *(nint*)(actor + MotionModelNameOffset);
 
-        _logger.Info($"[Fps60] Motion plain {(name == 0 ? "?" : Marshal.PtrToStringAnsi(name))}: " +
+        _logger.Info($"[Fps60] Motion uncorrected {(name == 0 ? "?" : Marshal.PtrToStringAnsi(name))}: " +
                      $"flags=0x{*(uint*)(actor + EngineAddresses.ActorFlagsOffset):X8} " +
                      $"t=0x{time:X8} end=0x{end:X8} loops={*(short*)(actor + MotionLoopsOffset)} " +
                      $"run={running} speed=0x{*(ushort*)(actor + MotionSpeedOffset):X4} " +
@@ -193,27 +203,35 @@ public unsafe sealed partial class Fps60Module
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_motion_advance(nint actor, int mode);
 
-    /* Counts, and where asked to, lends the rate flag.
+    /* Counts, and corrects the actors the engine's own rate correction does not reach.
      *
-     * The survey established the population: 70,353 of 71,171 calls in one intro take the corrected
-     * path and 818 do not. Those 818 are the actors a cutscene script cleared the bit on, so lending
-     * it overrules the scene rather than repairing an omission, and the lend is off by default for
-     * that reason. It is kept as a way to measure what overruling one scene costs.
+     * This is where the motion rate correction belongs, because this is where the engine takes the
+     * same decision. The advance multiplies its step by sg_rate only when the actor carries 0x100000
+     * and the global KEEP_FPS is asserted, and both halves of that are script-writable at any time.
+     * A correction decided anywhere else has to guess which way they will read when the step is
+     * finally computed, and Ch_SetMotionSpeed writes a field that never gets reset, so a wrong guess
+     * there is permanent. Decided here it lasts one call.
      *
-     * Nothing is computed here when it is on: the actor is handed the bit the engine tests for, the
-     * engine does its own arithmetic, and the bit is put back. The global KEEP_FPS still has to be
-     * asserted, because a scene that cleared that has turned the correction off for every actor and
-     * lending into it would correct exactly the subset the scripts opted out twice over.
+     * The lend is the correction: hand the actor the bit and, where a script has cleared it, the
+     * global, let the engine compute the step with its own sg_rate, then put both back. Nothing is
+     * computed by the module, which is the point - sg_rate is already right in every case the module
+     * would otherwise have to special-case. It is the presented-rate correction in ordinary play,
+     * the recorded PS2 frame time while a scene is paced from syncdata, and exactly 1.0 during a
+     * catch-up pass, where each extra pass is meant to be a full 30 Hz step.
      *
-     * Actors on the 0x40 path are left alone: the engine never applies sg_rate there, so lending the
-     * bit would change nothing.
+     * Both writes are safe to make around this one call because it is serial. The advance has one
+     * call site, inline in Ch_CalcMain's third loop over the actor table, on the calling thread; the
+     * job threads that loop dispatches run the per-element appliers, not the advance. Sg_GetKeepFps
+     * has four callers in the image and the advance is the only one that can run inside this window.
      *
-     * The hold is the third option and the only one that leaves the actor's own fields alone. On a
-     * held frame the call is not made at all, which is what an actor opted out of the rate
-     * correction was written for: it advances one animation frame per call, so reproducing the 30 Hz
-     * call sequence gives it the wall clock speed it was authored at without touching either the
-     * speed multiplier or the step. It is skipped for every actor the engine does correct, because
-     * those advance by a scaled step every frame and holding them would halve them twice.
+     * Actors on the 0x40 path are left alone. That branch has no sg_rate term at all, so lending
+     * changes nothing there, and it still runs at the presented rate.
+     *
+     * The hold is the alternative and the only option that leaves the actor's own fields alone. On a
+     * held frame the call is not made, which reproduces the 30 Hz call sequence exactly rather than
+     * scaling the step - what a scene that counts animation frames rather than time was authored
+     * against. It costs a pose that updates at 30 Hz inside a 60 Hz scene, so it is off by default
+     * and takes precedence over the lend when it is on; running both would correct twice.
      *
      * Skipping the call also skips the copy at the end of it, which pulls three joint rotations from
      * an actor's owner into a weapon model in the w061 to w065 range. That copy is a plain overwrite
@@ -223,40 +241,44 @@ public unsafe sealed partial class Fps60Module
     private void h_motion_advance(nint actor, int mode)
     {
         uint* flags_ptr = actor == 0 ? null : (uint*)(actor + EngineAddresses.ActorFlagsOffset);
-        bool lent    = false;
-        bool held    = false;
-        bool sampled = false;
+        bool  lent_flag   = false;
+        bool  lent_global = false;
+        bool  held        = false;
+        bool  sampled     = false;
+        sbyte keep_fps    = 0;
 
         if (flags_ptr != null)
         {
             uint flags = *flags_ptr;
+            bool alt_path  = (flags & MotionFlagAltPath) != 0;
             bool opted_out = (flags & MotionFlagRated) == 0;
+
+            keep_fps = KeepFps;
+
+            // The engine's own gate, read the way the advance reads it. An actor that fails it takes
+            // one whole animation frame per call and so runs at the presented rate.
+            bool rate_corrected = !alt_path && !opted_out && keep_fps != 0;
 
             _motion_calls++;
             _motion_flags_seen |= flags;
 
-            if ((flags & MotionFlagAltPath) != 0) { _motion_alt++;   note_motion_actor("alt",   actor, flags); }
-            else if (!opted_out)                  { _motion_rated++; note_motion_actor("rated", actor, flags); }
-            else
-            {
-                _motion_plain++;
-                note_motion_actor("plain", actor, flags);
-                sampled = _config.MotionSurvey;
-            }
+            if (alt_path)        { _motion_alt++;   note_motion_actor("alt",   actor, flags); }
+            else if (!opted_out) { _motion_rated++; note_motion_actor("rated", actor, flags); }
+            else                 { _motion_plain++; note_motion_actor("plain", actor, flags); }
 
-            // KEEP_FPS clear means the engine corrects nobody, so the module is already halving this
-            // actor's motion speed on the way in and either of these would be the second correction.
-            if (opted_out && KeepFps != 0)
+            if (!rate_corrected && !alt_path)
             {
+                sampled = _config.MotionSurvey;
+
                 if (_config.MotionHoldOptedOut && !advance_this_frame())
                 {
                     held = true;
                     _motion_held++;
                 }
-                else if (_config.MotionAdvanceLendFlag && (flags & MotionFlagAltPath) == 0)
+                else if (_config.MotionAdvanceLendFlag)
                 {
-                    *flags_ptr = flags | MotionFlagRated;
-                    lent = true;
+                    if (opted_out)     { *flags_ptr = flags | MotionFlagRated;              lent_flag   = true; }
+                    if (keep_fps == 0) { FhUtil.set_at(EngineAddresses.SgKeepFps, (sbyte)1); lent_global = true; }
                     _motion_lent++;
                 }
             }
@@ -272,9 +294,12 @@ public unsafe sealed partial class Fps60Module
         }
         finally
         {
-            // Restored even if the call throws: a bit left set outside this window changes how every
-            // other reader of the flag word sees the actor.
-            if (lent) *flags_ptr &= ~MotionFlagRated;
+            // Restored even if the call throws. A bit left set outside this window changes how every
+            // other reader of the flag word sees the actor, and a global left set overrules the
+            // scene for every subsystem that reads it, not only this one. The global is put back to
+            // the value it held rather than to 1, because scripts push 2 as well as 0 and 1.
+            if (lent_flag)   *flags_ptr &= ~MotionFlagRated;
+            if (lent_global) FhUtil.set_at(EngineAddresses.SgKeepFps, keep_fps);
         }
 
         if (sampled) note_motion_state(actor);

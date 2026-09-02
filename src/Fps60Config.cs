@@ -72,76 +72,65 @@ public sealed record Fps60Config
     /// </summary>
     public bool CrossFadeHold { get; init; } = true;
 
-    /// <summary>Retime motion and effect speeds.</summary>
+    /// <summary>
+    ///     Retime motion and effect speeds.
+    ///
+    ///     Ch_SetMotionSpeed is hooked but passes its argument through. It writes actor+0x750, which
+    ///     nothing resets, so a rate correction applied there outlives the flag state that justified
+    ///     it and the engine then corrects the same actor a second time for the rest of the scene.
+    ///     The motion rate correction lives at the advance instead, under
+    ///     <see cref="MotionAdvanceLendFlag"/>; the hook stays for its call counter and because the
+    ///     reasoning belongs next to the address.
+    /// </summary>
     public bool Motion { get; init; } = true;
 
     /// <summary>
-    ///     Decide the motion scale per actor rather than on KEEP_FPS alone, using the actor flag
-    ///     0x100000 that gates the engine's own sg_rate correction. Off: acting on that flag made a
-    ///     cutscene run at half speed and then stall, so the reading is incomplete.
+    ///     Correct the motion advance for every actor the engine's own gate excludes, by lending it
+    ///     that gate for the duration of one call.
+    ///
+    ///     The advance multiplies its accumulator step by sg_rate only when the actor carries flag
+    ///     0x100000 and the global KEEP_FPS is asserted. An actor that fails either half takes one
+    ///     whole animation frame per call, which is double wall speed at 60 Hz: a portion played
+    ///     with loops=1 reaches its end in half the authored time, the advance clamps the clip to
+    ///     the last whole frame and clears the running flag, and the actor parks on that pose while
+    ///     the script's wait runs on to its correct length and cuts elsewhere. What that looks like
+    ///     is a limb dropping in a single frame.
+    ///
+    ///     Both halves fail in practice, and the global one is the common case rather than the rare
+    ///     one. Ch_Allocate sets the actor bit on every actor and only ChEvent.setKeepFps clears it,
+    ///     which is why deployed telemetry has never once seen an actor reach the advance without
+    ///     it; the global is cleared by scripts through sgSetKeepFps and stays clear for whole
+    ///     scenes, and telemetry reports it clear for roughly half the sampled play time.
+    ///
+    ///     The module computes nothing here. The actor is handed the bit, the global is handed the
+    ///     value the engine tests for, the engine does its own arithmetic, and both are put back.
+    ///     That matters because sg_rate is already right in situations the module would otherwise
+    ///     have to special-case: it is the presented-rate correction in ordinary play, the recorded
+    ///     PS2 frame time while a scene is paced from syncdata, and exactly 1.0 during a catch-up
+    ///     pass, where an extra simulation pass is meant to be a full 30 Hz step rather than a
+    ///     scaled one.
+    ///
+    ///     Actors on the 0x40 path are left alone: that branch has no sg_rate term at all, so
+    ///     lending changes nothing there.
     /// </summary>
-    public bool MotionPerActor { get; init; }
+    public bool MotionAdvanceLendFlag { get; init; } = true;
 
     /// <summary>
-    ///     Lend the engine's rate flag to the actors that reach the motion advance without it, for
-    ///     the duration of that call only. Off, because those actors are meant to run uncorrected.
+    ///     Correct the same actors by skipping the motion advance on frames the module holds,
+    ///     instead of by lending the gate. The alternative to <see cref="MotionAdvanceLendFlag"/>,
+    ///     not an addition to it: where both are on, the hold takes the actor and the lend leaves it
+    ///     alone, because scaling a step that is only taken half as often corrects it twice.
     ///
-    ///     The bit is not missing from them. Ch_Allocate sets it on every actor it creates, and the
-    ///     only other writer is the ATEL call target ChEvent.setKeepFps, which cutscene scripts use
-    ///     to clear it - 22 of its 26 call sites in the script corpus pass false. An actor on the
-    ///     uncorrected path is therefore one a scene deliberately opted out of the engine's own rate
-    ///     correction, usually because the scene's own timing counts on that motion advancing once
-    ///     per call rather than once per unit of time.
+    ///     What the hold buys is exactness for a scene that counts animation frames rather than
+    ///     time. Lending scales the step, so a clip lands on positions the authored 30 Hz sequence
+    ///     never visited; holding reproduces that sequence call for call and writes neither the
+    ///     speed multiplier nor the step.
     ///
-    ///     Lending the bit makes the engine multiply that actor's accumulator step by sg_rate, which
-    ///     at 60 Hz halves it. That is the same arithmetic as MotionPerActor, which halves the motion
-    ///     speed multiplier feeding the same step, and MotionPerActor is what made a cutscene run at
-    ///     half speed and then stall. The mechanism differs, the result does not. Correcting these
-    ///     actors is a per scene decision, not a blanket one, so this stays available for measuring
-    ///     one scene at a time and stays off otherwise.
-    /// </summary>
-    public bool MotionAdvanceLendFlag { get; init; }
-
-    /// <summary>
-    ///     Skip the motion advance entirely, on frames the module holds, for the actors a cutscene
-    ///     opted out of the engine's rate correction. Off until a survey capture confirms the
-    ///     diagnosis it is built on.
-    ///
-    ///     An actor whose flag 0x100000 is clear gets no rate correction from anywhere: the advance
-    ///     skips its sg_rate multiply, and the two options above are off. It therefore takes one
-    ///     animation frame per call, which is double wall speed at 60 Hz. A portion played with
-    ///     loops=1 then reaches its end in half the authored time, the advance clamps the clip time
-    ///     to the last whole frame and clears the running flag, and the actor parks on that pose
-    ///     while the script's wait runs on to its correct length and cuts to somewhere else in the
-    ///     same clip. What that looks like is a limb dropping in a single frame.
-    ///
-    ///     Holding differs from both rejected options in what it leaves alone:
-    ///
-    ///     <list type="bullet">
-    ///       <item><see cref="MotionPerActor"/> halves the argument to Ch_SetMotionSpeed, which
-    ///             writes the persistent speed multiplier at actor+0x750. Ch_SetMotionSeq rewrites
-    ///             the per-motion multiplier at +0x754 on every motion change but never +0x750, so
-    ///             a halved value outlives the motion and the flag state that justified it. A scene
-    ///             that sets the speed while opted out and rejoins the corrected path six bytes
-    ///             later ends up at a quarter speed for the rest of the scene.</item>
-    ///       <item><see cref="MotionAdvanceLendFlag"/> halves the step instead, so the clip still
-    ///             advances every frame but by half as much. A script waiting for the motion to
-    ///             reach a given animation frame then waits twice as long, and one waiting for the
-    ///             running flag to clear can wait forever.</item>
-    ///     </list>
-    ///
-    ///     A hold writes neither field. It reproduces the 30 Hz call sequence, so the "one call is
-    ///     one animation frame" the scene opted into still holds and the wall clock speed is right.
-    ///
-    ///     Two costs, both accepted: the actor's drawn pose then updates at 30 Hz while everything
+    ///     What it costs is why it is off. The actor's drawn pose updates at 30 Hz while everything
     ///     around it updates at 60, which is visible if it moves fast; and the stationary predicate
     ///     that selects the cheap per-element applier is fed from optpos, which is calculated
     ///     elsewhere and still runs every frame, so a held actor reads as not moving and becomes
     ///     eligible for a filtered path worth up to 0.70 degrees of lag per joint.
-    ///
-    ///     Requires KEEP_FPS to be asserted. With it clear the engine corrects nobody, so the module
-    ///     already halves this actor's motion speed on the way in, and holding as well would be the
-    ///     same double correction that sank MotionPerActor.
     /// </summary>
     public bool MotionHoldOptedOut { get; init; }
 
