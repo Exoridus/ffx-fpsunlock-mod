@@ -10,6 +10,12 @@ namespace Fahrenheit.Mods.Fps60;
 ///     against 3 and it writes 0, so the sequence of values the function sees is 0, 1, 2, 0, 1, 2 -
 ///     one star pass in three calls, which at 30 Hz is the authored 10 Hz. At 60 Hz it becomes 20 Hz.
 ///
+///     The threshold is scaled by Scale rather than by the presented rate because the counter is
+///     advanced by this function and this function runs once per Sg_MainLoop pass: drawDreamEffect
+///     calls it from the draw half of Sg_MainLoop, outside the viewport loop and behind none of the
+///     frame-skip render gates. So the counter counts simulation passes, which is what Scale
+///     measures - the same binding sg_count and the particle age step have.
+///
 ///     Raising the threshold is safe because the counter only ever moves by one and is only ever
 ///     reset on exact equality, so every value up to the threshold is reached; the only value that
 ///     would break it is 1, which the counter skips on its way from the draw pass to 2 and would then
@@ -40,9 +46,8 @@ public unsafe sealed partial class Fps60Module
     private int _dream_star_threshold;
 
     /// <summary>
-    ///     Applied once the target framerate is known, like the other two image patches here: at init
-    ///     the rate is only implied by the limiter, and with the limiter removed that implication is
-    ///     wrong.
+    ///     Called once per presented frame from <c>apply_rate_patches</c>, like the other two image
+    ///     patches, and a compare and a return unless the threshold it derives has changed.
     /// </summary>
     private void patch_dream_overlay_stars()
     {

@@ -76,14 +76,20 @@ public unsafe sealed partial class Fps60Module
     private int _timeline_step;
 
     /// <summary>
-    ///     Applied once the target framerate is known rather than at init, because at init it is
-    ///     only implied by the limiter - and with the limiter removed that implication is wrong.
+    ///     Called once per presented frame from <c>apply_rate_patches</c>, and a compare and a return
+    ///     unless the step it derives has changed. Never before a rate has been adopted: at init the
+    ///     rate is only implied by the limiter, and with the limiter removed that implication is
+    ///     wrong.
     ///
-    ///     Re-applied whenever the rate changes. A one-shot patch looked right and was not: the
-    ///     first measurement of a run happens while the game is still loading, and a boot sample of
-    ///     46.7 fps froze the step at a correction for 50 Hz that the next sample already knew was
-    ///     wrong. Writing again is safe because the journal restores in reverse order, so the
-    ///     original still comes back last.
+    ///     A one-shot patch looked right and was not: the first measurement of a run happens while
+    ///     the game is still loading, and a boot sample of 46.7 fps froze the step at a correction
+    ///     for 50 Hz that the next sample already knew was wrong. Writing again is safe because the
+    ///     journal restores in reverse order, so the original still comes back last.
+    ///
+    ///     Scale is the right divisor here, and that is a statement about the age step rather than a
+    ///     convention: pppPartLoop runs in the draw half of every Sg_MainLoop pass, behind none of
+    ///     the frame-skip render gates, so a particle's age advances once per simulation pass and not
+    ///     once per presented frame. Passes per authored 30 Hz step is what Scale is.
     /// </summary>
     private void patch_particle_timeline()
     {

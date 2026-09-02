@@ -11,9 +11,18 @@ namespace Fahrenheit.Mods.Fps60;
 ///     counter, by moving the test to a higher bit.
 ///
 ///     A higher bit of a counter is still a fifty percent square wave, which is what makes this the
-///     one correction here that loses nothing: bit 0 gives a period of two frames, bit 1 four, bit 2
+///     one correction here that loses nothing: bit 0 gives a period of two counts, bit 1 four, bit 2
 ///     eight, and the on-time stays half the period in every case. Bit 1 at 60 Hz is the authored
 ///     15 Hz with the authored duty cycle.
+///
+///     What the mask has to be scaled by is decided by what sg_count counts, and it does not count
+///     presented frames. It is incremented once at the tail of every Sg_MainLoop pass, immediately
+///     before the GS buffer swap that reads its parity, and nothing gates that increment - so a
+///     frame the engine runs several simulation passes for advances it several times, and a scene
+///     paced from the syncdata table advances it once per recorded PS2 frame. Passes per authored
+///     30 Hz step is exactly what Scale is, which is why the mask comes from Scale and not from the
+///     presented rate. Reading the presented rate instead would double the blink period through the
+///     three syncdata scenes, where the engine holds itself to the recording's own cadence.
 ///
 ///     Not a detour. The function also writes the window's own elapsed time to +0xE0 and calls
 ///     TOBtlDrawCommandWindow, so holding the call would hold the command window itself. The single
@@ -33,9 +42,9 @@ public unsafe sealed partial class Fps60Module
     private int _blink_mask;
 
     /// <summary>
-    ///     Applied once the target framerate is known rather than at init, for the same reason the
-    ///     particle timeline patch is: at init the rate is only implied by the limiter, and with the
-    ///     limiter removed that implication is wrong.
+    ///     Called once per presented frame from <c>apply_rate_patches</c>, and a compare and a return
+    ///     unless the mask it derives has changed. It has to be asked that often rather than only on
+    ///     a rate change, because Scale also moves when a syncdata scene begins or ends.
     /// </summary>
     private void patch_battle_cursor_blink()
     {

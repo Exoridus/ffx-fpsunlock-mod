@@ -159,7 +159,11 @@ public unsafe sealed partial class Fps60Module : FhModule
         retime_texture_animation();
         sample_particle_population();
 
-        if (_config.Telemetry) sample_present_rate();
+        // Not behind the telemetry flag. This is where the rate every correction derives from is
+        // measured, and where the image patches are kept in step with it; only the log line it
+        // emits is telemetry.
+        sample_present_rate();
+        apply_rate_patches();
 
         return new FhMethodHandle<d_frame>(new FhMethodLocation(EngineAddresses.FFXApplicationAnimate, 0))
             .chain_from(h_frame).fnptr!(ptr_this);
@@ -177,6 +181,13 @@ public unsafe sealed partial class Fps60Module : FhModule
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private TimeSpan _last_sample;
 
+    /// <summary>
+    ///     Measures the present rate over a five second window and hands it to the rate adoption.
+    ///     Only the log line at the end is telemetry: the measurement itself is what
+    ///     <see cref="TargetFramerate"/> is, so gating the whole method on the telemetry flag left
+    ///     every correction running on the rate the limiter implied rather than the one the display
+    ///     actually has.
+    /// </summary>
     private void sample_present_rate()
     {
         TimeSpan now = _clock.Elapsed;
@@ -185,16 +196,20 @@ public unsafe sealed partial class Fps60Module : FhModule
         double fps = (_frames - _frames_at_last_sample) / (now - _last_sample).TotalSeconds;
 
         adopt_measured_rate(fps);
-        _logger.Info($"[Fps60] present {fps:F1} fps over the last {(now - _last_sample).TotalSeconds:F1}s, " +
-                     $"vsync_interval={VSyncInterval}, keep_fps={KeepFps}, " +
-                     $"sg_ratef={FhUtil.get_at<float>(EngineAddresses.SgRateF):F3}, " +
-                     $"{particle_counts()}, {effect_counts()}, {kernel_counts()}, {motion_counts()}, {survey_counts()}, " +
-                     $"{engine_state_counts()}, " +
-                     $"{motion_sequence_counts()}, " +
-                     $"{frame_sequence_counts()}, {lens_sprite_counts()}, " +
-                     $"{texture_animation_counts()} cam_acc={_camera_acc_calls} {motion_speed_counts()}, " +
-                     $"{cross_fade_counts()}, {atel_wait_counts()}, " +
-                     $"{particle_timeline_counts()}, {frame_skip_counts()}");
+
+        if (_config.Telemetry)
+        {
+            _logger.Info($"[Fps60] present {fps:F1} fps over the last {(now - _last_sample).TotalSeconds:F1}s, " +
+                         $"vsync_interval={VSyncInterval}, keep_fps={KeepFps}, " +
+                         $"sg_ratef={FhUtil.get_at<float>(EngineAddresses.SgRateF):F3}, " +
+                         $"{particle_counts()}, {effect_counts()}, {kernel_counts()}, {motion_counts()}, {survey_counts()}, " +
+                         $"{engine_state_counts()}, " +
+                         $"{motion_sequence_counts()}, " +
+                         $"{frame_sequence_counts()}, {lens_sprite_counts()}, " +
+                         $"{texture_animation_counts()} cam_acc={_camera_acc_calls} {motion_speed_counts()}, " +
+                         $"{cross_fade_counts()}, {atel_wait_counts()}, " +
+                         $"{particle_timeline_counts()}, {frame_skip_counts()}");
+        }
 
         _frames_at_last_sample = _frames;
         _last_sample = now;
@@ -238,8 +253,27 @@ public unsafe sealed partial class Fps60Module : FhModule
                      $"{adopted:F2} from a measured {fps:F1} fps. Scale is now {adopted / 30f:F2}.");
 
         _measured_framerate = adopted;
+    }
 
-        // The image patches have to know the rate, and only now does anyone.
+    /// <summary>
+    ///     Re-derives the three image patches, once per presented frame.
+    ///
+    ///     Every one of them takes its value from <see cref="Scale"/>, and Scale carries the syncdata
+    ///     term as well as the measured rate. That term flips whenever a scene with recorded PS2
+    ///     frame times starts or ends, which is far more often than the measured rate moves - so
+    ///     re-deriving only on a rate change leaves a byte in .text that disagrees with the value the
+    ///     rest of the module is using, with no second trigger to correct it. A byte cannot follow a
+    ///     per-scene state unless something rewrites it.
+    ///
+    ///     Each of the three is a compare and a return while its value is unchanged, so the cost of
+    ///     asking every frame is three float divisions. The rate is not asked for before one has been
+    ///     adopted: at init it is only implied by the limiter, and with the limiter removed that
+    ///     implication is wrong.
+    /// </summary>
+    private void apply_rate_patches()
+    {
+        if (_measured_framerate <= 0) return;
+
         patch_particle_timeline();
         patch_battle_cursor_blink();
         patch_dream_overlay_stars();
