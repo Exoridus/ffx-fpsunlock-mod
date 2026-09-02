@@ -172,6 +172,115 @@ public static class EngineAddresses
     /// <summary>AtelPopStackInteger(worker, stack).</summary>
     public const nint AtelPopStackInteger = 0x46DE90;
 
+    // --- ATEL worker move and rotation records ---
+    //
+    // Every setter below is a leaf with one caller, its own ATEL opcode handler, and every one of
+    // them ends in 5d c3 rather than a c2 imm16, so the caller cleans: cdecl, measured in the
+    // shipped image rather than taken from the catalog, which reports __stdcall for all of them.
+    //
+    // The two readers and the integrator report an unreadable cleanup in the catalog because their
+    // returns are not a plain ret. Their shared call site settles it instead: FUN_00866680 at
+    // 0x0086671b pushes two arguments for each of the first two calls and clears sixteen bytes
+    // once, and pushes two for each of the next four and clears thirty-two once. Caller cleanup,
+    // two arguments, for all three.
+
+    /// <summary>
+    ///     Move record reader, void(worker, thread). Cdecl, two arguments. Reads the record at
+    ///     thread+0x44 once per ATEL pass and advances everything in it: the turn steps, the
+    ///     watchdog counter, the interpolation accumulator and the actor's speed. Its prologue
+    ///     carries a stack cookie (a1 d8 13 c6 00 33 c5 89 45 fc), which the entry detour does not
+    ///     disturb - the cookie is checked against the frame the original itself sets up.
+    /// </summary>
+    public const nint AtelMoveRecordRead = 0x468930;
+
+    /// <summary>
+    ///     Rotation record reader, void(worker, thread). Cdecl, two arguments, no stack cookie.
+    ///     Ghidra types the second parameter float; it is the same thread pointer the move reader
+    ///     takes, dereferenced as an int immediately (iVar6 = (int)param_2, then iVar6 + 0x48).
+    ///     A binding built from the Ghidra signature marshals it through the floating point path.
+    /// </summary>
+    public const nint AtelRotRecordRead = 0x4694B0;
+
+    /// <summary>
+    ///     Position integrator for ATEL workers that are not bound to a Ch character,
+    ///     void(worker, thread). Cdecl, two arguments; the catalog declares one, and the call site
+    ///     pushes two.
+    ///
+    ///     It runs for worker+0xaa in 2..5 - attachToCamera, attachToMapGroup, attachToMapPart -
+    ///     and adds the actor's speed along its two Euler angles to its position once per call with
+    ///     no delta time, then hands the result to MsCameraSetRect for kind 2. Kind 1, the
+    ///     loadModel character, leaves through Ch_SetSp instead and Ch_CalcMain integrates it
+    ///     against the corrected delta, so this is the only translation path the module does not
+    ///     otherwise reach.
+    /// </summary>
+    public const nint AtelWorkerIntegratePos = 0x462960;
+
+    /// <summary>
+    ///     movie_have_camera. Cdecl, no arguments, a pure read: true only outside the Luca theatre
+    ///     and only for curMovieId 0x2e, 0x48, 0x20 or 0x46. It is the second half of the gate that
+    ///     tells the move reader's type 7 to advance by the FMV decoder's own frame delta rather
+    ///     than by one, and the module evaluates it rather than inferring it from the delta.
+    /// </summary>
+    public const nint MovieHaveCamera = 0x36F0D0;
+
+    // Group A, the twelve per-call rate setters. Each writes a rate in radians per call, so each is
+    // divided by the scale.
+
+    /// <summary>ATEL setYawTurnStepAllLevels [006Dh] -> move+0x3c on all nine levels. Cdecl.</summary>
+    public const nint AtelSetYawTurnStepAllLevels = 0x46F150;
+
+    /// <summary>ATEL setPitchTurnStepAllLevels [006Eh] -> move+0x40 on all nine levels. Cdecl.</summary>
+    public const nint AtelSetPitchTurnStepAllLevels = 0x46F100;
+
+    /// <summary>ATEL setYawTurnStep [002Bh] -> move+0x3c on one level. Cdecl, three arguments.</summary>
+    public const nint AtelSetYawTurnStep = 0x4714C0;
+
+    /// <summary>ATEL setPitchTurnStep [002Ch] -> move+0x40 on one level. Cdecl, three arguments.</summary>
+    public const nint AtelSetPitchTurnStep = 0x4714A0;
+
+    /// <summary>ATEL setAllRotationRate1 [006Fh] -> rot+0x10, the yaw rate, on all nine levels. Cdecl.</summary>
+    public const nint AtelSetYawRotRateAllLevels = 0x46F240;
+
+    /// <summary>ATEL [00E4h] -> rot+0x14, the alternate yaw rate flag 0x200 selects, on all nine levels. Cdecl.</summary>
+    public const nint AtelSetAltYawRotRateAllLevels = 0x46F290;
+
+    /// <summary>ATEL setAllRotationRate2 [0070h] -> rot+0x18, the pitch rate, on all nine levels. Cdecl.</summary>
+    public const nint AtelSetPitchRotRateAllLevels = 0x46F1F0;
+
+    /// <summary>ATEL setAllRotationRate3 [0071h] -> rot+0x1c, the roll rate, on all nine levels. Cdecl.</summary>
+    public const nint AtelSetRollRotRateAllLevels = 0x46F1A0;
+
+    /// <summary>ATEL setRotationSpeed1 [002Eh] -> rot+0x10 on one level, 8,440 script sites. Cdecl, three arguments.</summary>
+    public const nint AtelSetYawRotRate = 0x471520;
+
+    /// <summary>ATEL [00E3h] -> rot+0x14 on one level. Cdecl, three arguments.</summary>
+    public const nint AtelSetAltYawRotRate = 0x471540;
+
+    /// <summary>ATEL setRotationSpeed2 [002Fh] -> rot+0x18 on one level, 9,451 script sites. Cdecl, three arguments.</summary>
+    public const nint AtelSetPitchRotRate = 0x471500;
+
+    /// <summary>ATEL setRotationSpeed3 [0030h] -> rot+0x1c on one level. Cdecl, three arguments.</summary>
+    public const nint AtelSetRollRotRate = 0x4714E0;
+
+    // Group B, the four watchdog deadlines. Each is a frame count stored sixteen bits wide, so each
+    // is multiplied by the scale and clamped to what a short can hold.
+
+    /// <summary>
+    ///     ATEL setTurningDuration [0074h] -> move+0x04 on all nine levels, 736 script sites, 726
+    ///     of which pass 60. Cdecl; the argument arrives as a full dword (8b 4d 0c) and is stored
+    ///     sixteen bits wide (66 89).
+    /// </summary>
+    public const nint AtelSetTurnDeadlineAllLevels = 0x46F010;
+
+    /// <summary>ATEL [0072h] -> move+0x04 on one level, no script sites. Cdecl, three arguments.</summary>
+    public const nint AtelSetTurnDeadline = 0x4704C0;
+
+    /// <summary>ATEL [0075h] -> rot+0x04 on all nine levels, no script sites. Cdecl.</summary>
+    public const nint AtelSetRotDeadlineAllLevels = 0x46F0B0;
+
+    /// <summary>ATEL [0073h] -> rot+0x04 on one level, no script sites. Cdecl, three arguments.</summary>
+    public const nint AtelSetRotDeadline = 0x471110;
+
     // --- Battle, menu, particles, FMV ---
 
     /// <summary>TOBtlCtrlLimitTimer. Divides by a fixed 30 or 25 depending on the mode.</summary>

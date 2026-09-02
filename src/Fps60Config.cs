@@ -426,6 +426,47 @@ public sealed record Fps60Config
     /// </summary>
     public bool NeckTracking { get; init; } = true;
 
+    /// <summary>
+    ///     Correct the ATEL worker's own motion and rotation records, which drive every event
+    ///     character, the field camera and every attached map object.
+    ///
+    ///     Each ATEL worker carries nine move records and nine rotation records, one per thread
+    ///     priority, and two readers step them once per presented frame. Everything in them is
+    ///     counted in calls: a yaw and a pitch turn step in radians, four rotation rates, a float
+    ///     interpolation accumulator that advances by one, and two watchdog deadlines the readers
+    ///     compare their own per-call counter against. Nothing in the engine scales any of it, so at
+    ///     60 Hz an event character turns twice as fast and a scripted rotation finishes in half the
+    ///     authored time while the wait that follows it now runs twice as long.
+    ///
+    ///     The rates are divided at their setters, which are leaf functions with one caller each.
+    ///     The deadlines are multiplied at theirs. The accumulator cannot be corrected at a setter -
+    ///     startMotion and startRotation overwrite the duration with its reciprocal for half the
+    ///     types, and move type 7 takes its step from the FMV decoder while a movie with its own
+    ///     camera is playing - so it is corrected at the increment instead, by a pair around the two
+    ///     readers that rewrites the accumulator by the delta the reader just produced.
+    /// </summary>
+    public bool AtelWorkerMotion { get; init; } = true;
+
+    /// <summary>
+    ///     Correct the position integrator of the ATEL workers that are not bound to a Ch
+    ///     character: the field and event camera, and every map group or map part a script
+    ///     attaches. It adds the worker's speed along its facing to its position once per call with
+    ///     no delta time at all, so at 60 Hz all of them travel twice as fast.
+    ///
+    ///     Separate from <see cref="AtelWorkerMotion"/> even though it belongs to the same records,
+    ///     because it is the largest visible change of the four and the only one that moves the
+    ///     camera itself. Bisecting it should not mean turning off eleven corrections that are not
+    ///     in question.
+    ///
+    ///     The correction scales the speed the integrator reads and puts it back afterwards rather
+    ///     than scaling the setter that wrote it. The setter is the wrong lever twice over: the
+    ///     same field feeds Ch_SetSp for the 5,509 loadModel workers whose motion Ch_CalcMain
+    ///     already integrates against a corrected delta, and the speed the integrator actually uses
+    ///     is recomputed every call as a proportional approach or an accelerated ramp rather than
+    ///     being the stored value at all.
+    /// </summary>
+    public bool AtelWorkerTranslation { get; init; } = true;
+
     /// <summary>Log measured present rate and frame delta statistics.</summary>
     public bool Telemetry { get; init; } = true;
 
