@@ -102,6 +102,49 @@ public sealed record Fps60Config
     /// </summary>
     public bool MotionAdvanceLendFlag { get; init; }
 
+    /// <summary>
+    ///     Skip the motion advance entirely, on frames the module holds, for the actors a cutscene
+    ///     opted out of the engine's rate correction. Off until a survey capture confirms the
+    ///     diagnosis it is built on.
+    ///
+    ///     An actor whose flag 0x100000 is clear gets no rate correction from anywhere: the advance
+    ///     skips its sg_rate multiply, and the two options above are off. It therefore takes one
+    ///     animation frame per call, which is double wall speed at 60 Hz. A portion played with
+    ///     loops=1 then reaches its end in half the authored time, the advance clamps the clip time
+    ///     to the last whole frame and clears the running flag, and the actor parks on that pose
+    ///     while the script's wait runs on to its correct length and cuts to somewhere else in the
+    ///     same clip. What that looks like is a limb dropping in a single frame.
+    ///
+    ///     Holding differs from both rejected options in what it leaves alone:
+    ///
+    ///     <list type="bullet">
+    ///       <item><see cref="MotionPerActor"/> halves the argument to Ch_SetMotionSpeed, which
+    ///             writes the persistent speed multiplier at actor+0x750. Ch_SetMotionSeq rewrites
+    ///             the per-motion multiplier at +0x754 on every motion change but never +0x750, so
+    ///             a halved value outlives the motion and the flag state that justified it. A scene
+    ///             that sets the speed while opted out and rejoins the corrected path six bytes
+    ///             later ends up at a quarter speed for the rest of the scene.</item>
+    ///       <item><see cref="MotionAdvanceLendFlag"/> halves the step instead, so the clip still
+    ///             advances every frame but by half as much. A script waiting for the motion to
+    ///             reach a given animation frame then waits twice as long, and one waiting for the
+    ///             running flag to clear can wait forever.</item>
+    ///     </list>
+    ///
+    ///     A hold writes neither field. It reproduces the 30 Hz call sequence, so the "one call is
+    ///     one animation frame" the scene opted into still holds and the wall clock speed is right.
+    ///
+    ///     Two costs, both accepted: the actor's drawn pose then updates at 30 Hz while everything
+    ///     around it updates at 60, which is visible if it moves fast; and the stationary predicate
+    ///     that selects the cheap per-element applier is fed from optpos, which is calculated
+    ///     elsewhere and still runs every frame, so a held actor reads as not moving and becomes
+    ///     eligible for a filtered path worth up to 0.70 degrees of lag per joint.
+    ///
+    ///     Requires KEEP_FPS to be asserted. With it clear the engine corrects nobody, so the module
+    ///     already halves this actor's motion speed on the way in, and holding as well would be the
+    ///     same double correction that sank MotionPerActor.
+    /// </summary>
+    public bool MotionHoldOptedOut { get; init; }
+
     /// <summary>Retime the battle limit timer.</summary>
     public bool BattleTimers { get; init; } = true;
 

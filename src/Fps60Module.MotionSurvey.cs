@@ -24,6 +24,12 @@ namespace Fahrenheit.Mods.Fps60;
 ///
 ///     The counts alone say how many actors run uncorrected but not which, so each path also names
 ///     the actors that reach it, once per distinct identity rather than once per frame.
+///
+///     Naming them is still not enough to say what the uncorrected advance costs, because the
+///     damage is a clip reaching the end of its portion early and stopping there, and a name says
+///     nothing about where a clip is. So the uncorrected actors also get their motion record
+///     sampled over time: clip position, clip end, loops left, running flag, speed and hokan
+///     divisor, on a slow heartbeat plus every change of the running flag.
 /// </summary>
 public unsafe sealed partial class Fps60Module
 {
@@ -48,6 +54,39 @@ public unsafe sealed partial class Fps60Module
     /// </summary>
     private const int MotionIdentityCap = 32;
 
+    /// <summary>
+    ///     The motion record fields a plain-path sample reports, all relative to the actor.
+    ///
+    ///     +0x4 is the model name, a char pointer the engine itself compares against "c001" and
+    ///     passes to strstr. The clip time and its end are 8.8 fixed point animation frames, and the
+    ///     end is stored as one less than the last frame. The speed multiplier is 8.8 and persists
+    ///     across motion changes; the hokan divisor is the convergence filter's countdown, floored
+    ///     at 1, where 1 means take the target outright.
+    /// </summary>
+    private const int MotionModelNameOffset = 0x4;
+    private const int MotionClipTimeOffset  = 0x740;
+    private const int MotionClipEndOffset   = 0x71c;
+    private const int MotionLoopsOffset     = 0x724;
+    private const int MotionRunningOffset   = 0x728;
+    private const int MotionSpeedOffset     = 0x750;
+    private const int MotionHokanOffset     = 0x752;
+
+    /// <summary>
+    ///     How many distinct actors the state sample will track. The actor array is a fixed table of
+    ///     fixed-stride slots, so a pointer is a stable identity for as long as the scene runs and
+    ///     the map cannot grow without bound; the cap is there so a scene with an unusual actor
+    ///     count cannot turn the log into a per-frame trace either.
+    /// </summary>
+    private const int MotionSampleActorCap = 64;
+
+    /// <summary>
+    ///     Seconds between two state lines for the same actor. The value being watched moves every
+    ///     frame, so a per-frame line would be unreadable and a line every few seconds would miss
+    ///     the transition entirely; the compromise is a slow heartbeat plus an immediate line
+    ///     whenever the motion-running flag changes, which is the event that decides the question.
+    /// </summary>
+    private const double MotionSampleIntervalSeconds = 1.0;
+
     private long _motion_calls;
     private long _motion_rated;      // 0x40 clear and 0x100000 set: the corrected path
     private long _motion_plain;      // 0x40 clear, no 0x100000: uncorrected
@@ -58,11 +97,14 @@ public unsafe sealed partial class Fps60Module
     private readonly Dictionary<string, int> _motion_named_per_path = [];
 
     private long _motion_lent;
+    private long _motion_held;
+
+    private readonly Dictionary<nint, (double At, short Running)> _motion_samples = [];
 
     private string motion_counts()
         => $"mot_calls={_motion_calls} mot_rated={_motion_rated} mot_plain={_motion_plain} " +
-           $"mot_alt={_motion_alt} mot_lent={_motion_lent} mot_bits=0x{_motion_flags_seen:X} " +
-           $"mot_named={_motion_identities.Count}";
+           $"mot_alt={_motion_alt} mot_lent={_motion_lent} mot_held={_motion_held} " +
+           $"mot_bits=0x{_motion_flags_seen:X} mot_named={_motion_identities.Count}";
 
     /// <summary>
     ///     Reports an actor the first time a given (path, tag, flags) combination is seen. Keying on
@@ -92,11 +134,56 @@ public unsafe sealed partial class Fps60Module
                      $"head=[{head0:X8} {head4:X8} {head8:X8}].");
     }
 
+    /// <summary>
+    ///     Reports where an uncorrected actor's clip actually is, repeatedly rather than once, so
+    ///     the log carries the clip's position over time rather than the moment it was first seen.
+    ///
+    ///     What to look for: an actor whose motion-running flag has gone to 0 while its clip time
+    ///     equals its clip end truncated to a whole frame - printed as PARKED - has run its portion
+    ///     to the end and stopped on the last pose. A plain-path actor doing that partway through a
+    ///     scene is the double-speed advance confirmed outright, because the script's wait then runs
+    ///     on to its authored length and hard cuts away from a pose the actor has been holding.
+    ///
+    ///     Called after the advance rather than before it, so a clamp the advance performs on this
+    ///     frame is reported on the frame it happens.
+    /// </summary>
+    private void note_motion_state(nint actor)
+    {
+        short running = *(short*)(actor + MotionRunningOffset);
+
+        if (_motion_samples.TryGetValue(actor, out (double At, short Running) last))
+        {
+            if (running == last.Running && ElapsedSeconds - last.At < MotionSampleIntervalSeconds) return;
+        }
+        else if (_motion_samples.Count >= MotionSampleActorCap)
+        {
+            return;
+        }
+
+        _motion_samples[actor] = (ElapsedSeconds, running);
+
+        int time = *(int*)(actor + MotionClipTimeOffset);
+        int end  = *(int*)(actor + MotionClipEndOffset);
+
+        // The clamp writes the end truncated to a whole frame, not the end itself, so the two are
+        // only equal after the low byte is masked off.
+        bool parked = running == 0 && time == (end & unchecked((int)0xffffff00));
+
+        nint name = *(nint*)(actor + MotionModelNameOffset);
+
+        _logger.Info($"[Fps60] Motion plain {(name == 0 ? "?" : Marshal.PtrToStringAnsi(name))}: " +
+                     $"flags=0x{*(uint*)(actor + EngineAddresses.ActorFlagsOffset):X8} " +
+                     $"t=0x{time:X8} end=0x{end:X8} loops={*(short*)(actor + MotionLoopsOffset)} " +
+                     $"run={running} speed=0x{*(ushort*)(actor + MotionSpeedOffset):X4} " +
+                     $"hokan={*(short*)(actor + MotionHokanOffset)}{(parked ? " PARKED" : "")}.");
+    }
+
     private bool init_motion_survey()
     {
-        // The lend rides on this hook, so it has to install for either option. Gating it on the
-        // survey alone left the lend silently inert on any config that did not also ask to count.
-        if (!_config.MotionSurvey && !_config.MotionAdvanceLendFlag) return true;
+        // The lend and the hold ride on this hook, so it has to install for any of the three
+        // options. Gating it on the survey alone left the lend silently inert on any config that
+        // did not also ask to count.
+        if (!_config.MotionSurvey && !_config.MotionAdvanceLendFlag && !_config.MotionHoldOptedOut) return true;
 
         return hook_or_log("motion advance", EngineAddresses.MotionAdvance,
             () => new FhMethodHandle<d_motion_advance>(new FhMethodLocation(EngineAddresses.MotionAdvance, 0))
@@ -119,28 +206,54 @@ public unsafe sealed partial class Fps60Module
      * lending into it would correct exactly the subset the scripts opted out twice over.
      *
      * Actors on the 0x40 path are left alone: the engine never applies sg_rate there, so lending the
-     * bit would change nothing. */
+     * bit would change nothing.
+     *
+     * The hold is the third option and the only one that leaves the actor's own fields alone. On a
+     * held frame the call is not made at all, which is what an actor opted out of the rate
+     * correction was written for: it advances one animation frame per call, so reproducing the 30 Hz
+     * call sequence gives it the wall clock speed it was authored at without touching either the
+     * speed multiplier or the step. It is skipped for every actor the engine does correct, because
+     * those advance by a scaled step every frame and holding them would halve them twice.
+     *
+     * Skipping the call also skips the copy at the end of it, which pulls three joint rotations from
+     * an actor's owner into a weapon model in the w061 to w065 range. That copy is a plain overwrite
+     * with no accumulation and the next call that does happen rewrites all of it, so the cost is the
+     * same one frame of staleness the rest of the held actor already carries. */
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     private void h_motion_advance(nint actor, int mode)
     {
         uint* flags_ptr = actor == 0 ? null : (uint*)(actor + EngineAddresses.ActorFlagsOffset);
-        bool lent = false;
+        bool lent    = false;
+        bool held    = false;
+        bool sampled = false;
 
         if (flags_ptr != null)
         {
             uint flags = *flags_ptr;
+            bool opted_out = (flags & MotionFlagRated) == 0;
 
             _motion_calls++;
             _motion_flags_seen |= flags;
 
-            if ((flags & MotionFlagAltPath) != 0)    { _motion_alt++;   note_motion_actor("alt",   actor, flags); }
-            else if ((flags & MotionFlagRated) != 0) { _motion_rated++; note_motion_actor("rated", actor, flags); }
+            if ((flags & MotionFlagAltPath) != 0) { _motion_alt++;   note_motion_actor("alt",   actor, flags); }
+            else if (!opted_out)                  { _motion_rated++; note_motion_actor("rated", actor, flags); }
             else
             {
                 _motion_plain++;
                 note_motion_actor("plain", actor, flags);
+                sampled = _config.MotionSurvey;
+            }
 
-                if (_config.MotionAdvanceLendFlag && KeepFps != 0)
+            // KEEP_FPS clear means the engine corrects nobody, so the module is already halving this
+            // actor's motion speed on the way in and either of these would be the second correction.
+            if (opted_out && KeepFps != 0)
+            {
+                if (_config.MotionHoldOptedOut && !advance_this_frame())
+                {
+                    held = true;
+                    _motion_held++;
+                }
+                else if (_config.MotionAdvanceLendFlag && (flags & MotionFlagAltPath) == 0)
                 {
                     *flags_ptr = flags | MotionFlagRated;
                     lent = true;
@@ -151,8 +264,11 @@ public unsafe sealed partial class Fps60Module
 
         try
         {
-            new FhMethodHandle<d_motion_advance>(new FhMethodLocation(EngineAddresses.MotionAdvance, 0))
-                .chain_from(h_motion_advance).fnptr?.Invoke(actor, mode);
+            if (!held)
+            {
+                new FhMethodHandle<d_motion_advance>(new FhMethodLocation(EngineAddresses.MotionAdvance, 0))
+                    .chain_from(h_motion_advance).fnptr?.Invoke(actor, mode);
+            }
         }
         finally
         {
@@ -160,5 +276,7 @@ public unsafe sealed partial class Fps60Module
             // other reader of the flag word sees the actor.
             if (lent) *flags_ptr &= ~MotionFlagRated;
         }
+
+        if (sampled) note_motion_state(actor);
     }
 }
