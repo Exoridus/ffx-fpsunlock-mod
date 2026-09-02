@@ -414,6 +414,18 @@ public sealed record Fps60Config
     /// </summary>
     public bool IdleSway { get; init; } = true;
 
+    /// <summary>
+    ///     Correct the head and neck tracking every actor runs while something has its attention.
+    ///     Its weight ramp, its yaw blend and its slerp fade all step once per call and nothing in
+    ///     the engine scales them, so at 60 Hz a character snaps its head onto a target in half the
+    ///     authored time and the blend out of a changed target is over twice as fast.
+    ///
+    ///     The correction holds the three clocks on skipped frames rather than skipping the call:
+    ///     the call is what writes the replace matrix and the weight of optpos element 9, and the
+    ///     same worker pass consumes them a few instructions later.
+    /// </summary>
+    public bool NeckTracking { get; init; } = true;
+
     /// <summary>Log measured present rate and frame delta statistics.</summary>
     public bool Telemetry { get; init; } = true;
 

@@ -291,6 +291,22 @@ public static class EngineAddresses
     public const nint ChIdleSway = 0x434570;
 
     /// <summary>
+    ///     Ch_NeckCalc(actor), the head and neck tracking. Cdecl with one argument, measured: both
+    ///     of its returns are a plain c3 and its single call site, in the per-actor worker
+    ///     FUN_008335b0 immediately after the idle look-around, pushes edi and clears eight bytes
+    ///     for the two calls together.
+    ///
+    ///     Unlike the look-around this one does load the stack cookie - a1 d8 13 c6 00 / 33 c5 at
+    ///     the entry - so its frame is checked on the way out. That constrains nothing a detour
+    ///     does, but it does mean the prologue is longer than the look-around's.
+    ///
+    ///     Three clocks advance once per call and none of them reads sg_rate: the weight ramp on
+    ///     0x418, the yaw blend on 0x41c, and the slerp fade on 0x4bc. The rates of the last two
+    ///     are shared .rdata constants with dozens of other readers, so they are not patchable.
+    /// </summary>
+    public const nint ChNeckCalc = 0x434950;
+
+    /// <summary>
     ///     graphicTextureVideoUpdate. The texture video path, which is not the FMV path and is not
     ///     reached by the FMV frameskip.
     /// </summary>
