@@ -56,6 +56,11 @@ public unsafe sealed partial class Fps60Module
         int threshold = Math.Clamp((int)Math.Round(VanillaDreamStarThreshold * Scale), 2, 127);
         if (threshold == _dream_star_threshold) return;
 
+        // Recorded before the verification rather than after it, for the reason the battle cursor
+        // patch gives: this field is what stops the derived threshold being re-checked once per
+        // presented frame, so a mismatch that left it unset would log an error every frame.
+        _dream_star_threshold = threshold;
+
         byte* site = FhUtil.ptr_at<byte>(EngineAddresses.DreamStarCounterCompare);
         byte current = site[DreamStarThresholdOffset];
 
@@ -70,8 +75,6 @@ public unsafe sealed partial class Fps60Module
                           $"{site[0]:X2} {site[1]:X2} {site[2]:X2} imm=0x{current:X2}.");
             return;
         }
-
-        _dream_star_threshold = threshold;
 
         if (threshold == VanillaDreamStarThreshold)
         {

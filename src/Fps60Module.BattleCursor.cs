@@ -58,6 +58,11 @@ public unsafe sealed partial class Fps60Module
 
         if (mask == _blink_mask) return;
 
+        // Recorded before the verification rather than after it. This field is the only thing that
+        // stops the derived mask being re-checked, and the function is asked once per presented
+        // frame - so leaving it unset on a mismatch would log the same error every frame.
+        _blink_mask = mask;
+
         byte* site = FhUtil.ptr_at<byte>(EngineAddresses.BattleCursorBlinkGate);
         byte current = site[BlinkMaskOffset];
 
@@ -74,8 +79,6 @@ public unsafe sealed partial class Fps60Module
                           $"mask=0x{current:X2}.");
             return;
         }
-
-        _blink_mask = mask;
 
         if (mask == VanillaBlinkMask)
         {
