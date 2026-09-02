@@ -3,15 +3,21 @@ namespace Fahrenheit.Mods.Fps60;
 /// <summary>
 ///     The new character texture animation format, which is the one an animated weapon texture uses.
 ///
-///     Its advance adds a per-slot step byte to a sequence accumulator once per call and compares the
-///     accumulator against the sprite's authored duration, so the step is a rate and the period lives
-///     in the asset. At 60 Hz the call happens twice as often and the animation runs twice as fast.
+///     The byte at slot+0xE is the amount the advance moves a channel's clock by on each call, and
+///     the advance applies it in whichever direction that channel's clock runs. FUN_0077f450 reads it
+///     once into a signed short and uses it twice: on a sprite sequence channel it is added to an
+///     accumulator that is then compared against the sprite's authored duration, and on a blink
+///     channel it is subtracted from a countdown that was seeded from rand() and whose going negative
+///     is what advances the state. So it is a per-call step either way, never a period - the period
+///     lives in the asset or in the seeded countdown. At 60 Hz the call happens twice as often and
+///     both kinds of channel run twice as fast.
 ///
 ///     The step cannot express one half: it is a signed byte and its engine values are 1 and 0. So
 ///     the correction is the one shape the byte does allow - write 0 on the frames a 30 Hz sequence
-///     would not have advanced, and put the engine's own value back on the frames it would. That is a
-///     hold, but a hold of the step rather than of the call, so the advance still runs, still draws,
-///     and still carries its own state forward.
+///     would not have advanced, and put the engine's own value back on the frames it would. Zero
+///     stalls both directions, which is why one hold covers both kinds of channel. That is a hold,
+///     but a hold of the step rather than of the call, so the advance still runs, still draws, and
+///     still carries its own state forward.
 /// </summary>
 public unsafe sealed partial class Fps60Module
 {
@@ -67,6 +73,34 @@ public unsafe sealed partial class Fps60Module
             _texanim_parked[slot] = value;
             FhUtil.set_at(timer, (sbyte)0);
             _texanim_parked_frames++;
+        }
+    }
+
+    /// <summary>
+    ///     Puts every parked step byte back, for the case where the module stops on a held frame.
+    ///
+    ///     The journal only covers image patches, and these are engine work-buffer bytes. A module
+    ///     that goes away with a slot parked at 0 leaves that animation stopped for the rest of the
+    ///     run, because nothing else ever writes the byte again unless a battle sets a motion speed.
+    ///
+    ///     The guard is the advancing branch's guard, for the same reason: a byte the engine has
+    ///     since written itself is the engine's, and putting the parked value over it would resume an
+    ///     animation the game stopped.
+    /// </summary>
+    private void restore_parked_texture_animation()
+    {
+        for (int slot = 0; slot < TexAnimSlotCount; slot++)
+        {
+            sbyte parked = _texanim_parked[slot];
+            if (parked == 0) continue;
+
+            _texanim_parked[slot] = 0;
+
+            nint timer = TexAnimSlotBase + slot * TexAnimSlotStride + TexAnimTimerOffset;
+            if (FhUtil.get_at<sbyte>(timer) != 0) continue;
+
+            FhUtil.set_at(timer, parked);
+            _texanim_restored++;
         }
     }
 }

@@ -212,14 +212,23 @@ public static class EngineAddresses
     public const nint PppRunPartFp = 0x3123D0;
 
     /// <summary>
-    ///     MsEffectProcess(mode). Stdcall. Mode 0 advances every active effect, mode 1 draws them,
-    ///     and both dispatch into the magic overlay DLL through the table at +0xc and +0x10 - which
-    ///     is why no function in FFX.exe carries the effect's own timeline.
+    ///     MsEffectProcess(mode). Cdecl, measured: every ret in the function is a plain c3.
     ///
-    ///     The advance is called once per presented frame regardless of how many simulation steps
-    ///     the frame ran: inside the Sg_GetCurExecFrames loop when there is at least one, and again
-    ///     in the iVar4 == 0 branch when there is none. At 60 Hz that is twice the rate the effects
-    ///     were authored for.
+    ///     Mode 0 advances every active effect and mode 1 draws them, and the discrimination holds
+    ///     through the whole body rather than only its head. All three dispatch sites - the eternal
+    ///     table at ot_eot_eternal, the per-actor loop over the 31 Chr slots whose +0xDFB is 4 or 5,
+    ///     and the single non-actor overlay at 0x01133360 - each pick the overlay's +0xC on mode 0
+    ///     and its +0x10 on mode 1. The timeline itself is inside the DLL, which is why no function
+    ///     in FFX.exe carries it.
+    ///
+    ///     The advance runs exactly once per Sg_MainLoop pass. Sg_MainLoop wraps it in a loop over
+    ///     Sg_GetCurExecFrames and repeats it once more where that reads zero, but neither is a real
+    ///     multiplier: outside debug mode Sg_GetCurExecFrames is _ExecFrames, which ships as 1 and
+    ///     whose only non-debug writer is Sg_SetExecFrames(1) at battle init, so the loop runs once
+    ///     and the zero branch is dead. The engine's real multi-pass is one level up, updateFFX
+    ///     repeating the whole main loop while <see cref="ElapsedFrameCountFrameSkip"/> is non-zero.
+    ///     One pass per presented frame is therefore the normal case, and at 60 Hz that is twice the
+    ///     rate the effects were authored for.
     /// </summary>
     public const nint MsEffectProcess = 0x387EC0;
 
@@ -242,17 +251,6 @@ public static class EngineAddresses
     ///     countdown of rand() % 0x5a + 0x3c - so it carries nothing to scale.
     /// </summary>
     public const nint ChrTexAnimAdvanceOld = 0x37FFD0;
-
-    /// <summary>
-    ///     MagicFile_Unload. No arguments. Calls graphicVFXDestroyAllExceptFieldAndEternal and then
-    ///     PhyreFIOS::UnloadMagicfilePrx, which is the FreeLibrary. It runs from MagicFile_Update in
-    ///     the tail of Sg_MainLoop, after the frame's present - so an overlay is stopped and unmapped
-    ///     inside one main loop iteration, not across a frame boundary.
-    /// </summary>
-    public const nint MagicFileUnload = 0x5DA940;
-
-    /// <summary>int. The magic id MagicFile_Cleanup queued for unloading; -1 when nothing is queued.</summary>
-    public const nint ToBeDeleteMagicId = 0x864CA4;
 
     /// <summary>
     ///     The eternal effect set's second entry point, efftOverTbl+0x10. Ghidra names the pair
@@ -328,6 +326,20 @@ public static class EngineAddresses
     public const nint SgCount = 0x1FCBBF0;
 
     /// <summary>
+    ///     int. The number of Sg_MainLoop passes updateFFX still owes this frame: it repeats its
+    ///     whole body while this is non-zero, and Sg_MainLoop consumes one pass per iteration.
+    ///
+    ///     FUN_00821f90 is the only writer on the ordinary path and it clamps the value to 1 unless
+    ///     two conditions both hold - the accumulated wall clock delta has reached 2/60 s, and
+    ///     FUN_0081fe40 (a per-scene gate that refuses in battle, during a video and under a movie
+    ///     camera) returns non-zero. Above that threshold it becomes floor(elapsed seconds * 30),
+    ///     the number of 30 Hz steps needed to catch up, and the passes beyond the first run with
+    ///     gParticleDoNotRender and gFrameSkipDoNotRender set, so they simulate without drawing.
+    ///     During a syncdata catch-up it is instead incremented once per recorded PS2 frame consumed.
+    /// </summary>
+    public const nint ElapsedFrameCountFrameSkip = 0xEFB7C0;
+
+    /// <summary>
     ///     uint. Vertical blank counter. Sg_MainCalcRate derives the animation rate from its delta:
     ///     sg_rate = (sg_vcount - previous) * 0x80, and sg_ratef = sg_rate / 256, so a delta of 2 is
     ///     the 1.0 that means "one full 30 Hz step".
@@ -363,6 +375,23 @@ public static class EngineAddresses
 
     /// <summary>Particle manager array. Stride 0x80; the time step is at +0x10 of each entry.</summary>
     public const nint PpvPartManagers = 0x94E380;
+
+    /// <summary>
+    ///     The <c>test byte ptr [sg_count], 1</c> in __TODrawWaitBtlWinPrepare (0x008A6810) that
+    ///     gates the multi-target cursor draw, so its immediate is the blink period. Verified in the
+    ///     shipped image as F6 05 F0 BB 3C 02 01, followed by the jump that skips the draw loop.
+    ///     Patched, not hooked: the function also stamps the window's elapsed time and draws the
+    ///     command window.
+    /// </summary>
+    public const nint BattleCursorBlinkGate = 0x4A688B;
+
+    /// <summary>
+    ///     The <c>cmp ax, 3</c> in graphicDrawDream (0x0063E120) that decides how often the overlay's
+    ///     star field is redrawn, so its immediate is the star pass period in presented frames.
+    ///     Verified in the shipped image as 66 83 F8 03, preceded by the inc and the store of the
+    ///     counter at 0x00CCB46C and followed by the branch that skips the reset.
+    /// </summary>
+    public const nint DreamStarCounterCompare = 0x23E483;
 
     /// <summary>uint. Non-zero while an FMV is playing.</summary>
     public const nint GMoviePlay = 0xD2A008;
@@ -429,13 +458,20 @@ public static class EngineAddresses
     public const nint ChTextureAnimSetEnable = 0x430D90;
 
     /// <summary>
-    ///     Ch_TextureSetAnimTimer(chr, timer). Stdcall. Forwards to tex_anim_timer, which stores a
-    ///     byte per texture animation slot at tex_anim_wk+0xE. It is a period rather than a frame
-    ///     index, so it scales like every other duration in this module.
+    ///     Ch_TextureSetAnimTimer(chr, timer). Cdecl, measured: the function ends in a plain c3 and
+    ///     cleans nothing. It forwards to tex_anim_timer when chr+0x6FC is set, which stores the low
+    ///     byte at tex_anim_wk + slot * 0x30 + 0xE.
     ///
-    ///     Its callers are what identify it: MsCalcMotionSpeed derives it from battle motion speed,
-    ///     which is why animated weapon textures run at double speed for the same reason animations
-    ///     did. The other two are MsBtlBridgeBtl2Event and one magic-side function.
+    ///     That byte is a step, not a period: FUN_0077f450 adds it to a sprite sequence accumulator
+    ///     and subtracts it from a blink countdown, once per call in either case, and the duration it
+    ///     is measured against lives in the asset. So it must not be scaled. The two engine writers
+    ///     say the same thing - MsCalcMotionSpeed writes only the literals 1 and 0 on a motion speed
+    ///     zero crossing, which is a pause and a resume rather than a rate. The other callers are
+    ///     MsBtlBridgeBtl2Event and one magic-side function.
+    ///
+    ///     The module hooks it as a pass-through, so the value reaches the engine unchanged. The hook
+    ///     is kept because it is the only place the writes are visible; the correction the byte can
+    ///     express is the per-slot hold in <see cref="Fps60Config.TextureAnimationStep"/>.
     /// </summary>
     public const nint ChTextureSetAnimTimer = 0x43D070;
 }

@@ -96,19 +96,23 @@ public unsafe sealed partial class Fps60Module
     }
 
     /// <summary>
-    ///     True while skipping the whole of MsEffectProcess skips only the advance.
+    ///     True while there is no live effect overlay at all, in battle or out of it.
     ///
-    ///     The function is not the clean advance/draw pair its two-branch head suggests. Only the
-    ///     head branches on the mode; everything after it runs on both modes and dispatches into the
-    ///     magic overlay modules, at +0xc for the advance and +0x10 for the draw - once per battle
-    ///     actor whose Chr+0xdfb is 4 or 5, then once more for the non-actor overlay. A hook can
-    ///     only skip the call as a whole, so holding mode 0 in battle also skips every overlay's
-    ///     update while mode 1 keeps calling its draw, and the two are halves of one module's state.
+    ///     Skipping mode 0 never skips a draw, and that is a property of the function rather than of
+    ///     where it is called from. MsEffectProcess discriminates on the mode at all three of its
+    ///     dispatch sites, not only in its head: the eternal table's +0xC against its +0x10, then the
+    ///     same pair per battle actor whose Chr+0xdfb is 4 or 5, then the same pair for the non-actor
+    ///     overlay. Every path to an overlay's +0x10 is behind mode == 1. What runs on both modes is
+    ///     MsGetChrTop, MsGetChr, FlushCache, MagicFile_GetEffectOverlayTable and the
+    ///     ms_effect_from_magicfile flag, which is raised and cleared inside the same call - reads
+    ///     and a flag with no life beyond the call, so a skipped call leaves nothing behind.
     ///
-    ///     Outside battle both halves are inert - MsGetChrTop returns _player_chrs, which is null,
-    ///     and the global overlay is idle - so the hold there really does only skip the advance.
-    ///     That is where it was measured and where it stays until the advance can be held on its
-    ///     own. The cost is that battle effects run at the presented rate again.
+    ///     So this is not the safety condition it was written as. It is a narrower one kept as a
+    ///     measurement lever: with an overlay live, the held advance is what makes battle effects run
+    ///     at the authored rate, and it is also what leaves the roughly a third of overlays that read
+    ///     Sg_GetCurExecFrames inside their draw internally inconsistent. Turning the hold off where
+    ///     no overlay is live at all costs nothing either way, which is what makes it a usable
+    ///     baseline. <see cref="Fps60Config.EffectHoldInBattle"/> is what decides whether it applies.
     /// </summary>
     private static bool hold_is_inert_below()
     {

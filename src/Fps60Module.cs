@@ -61,8 +61,14 @@ public unsafe sealed partial class Fps60Module : FhModule
 
         _config = Fps60Config.Load(config_path);
 
-        // The engine has no shutdown callback, so the restore is bound to process exit.
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => _patches.RestoreAll();
+        // The engine has no shutdown callback, so the restore is bound to process exit. The parked
+        // texture animation step bytes go back first: they are engine work-buffer state rather than
+        // image bytes, so the journal knows nothing about them.
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        {
+            restore_parked_texture_animation();
+            _patches.RestoreAll();
+        };
 
         bool ok = true;
 
@@ -94,7 +100,6 @@ public unsafe sealed partial class Fps60Module : FhModule
         ok &= init_particle_kernel_hooks();
         ok &= init_motion_survey();
         ok &= init_survey_hooks();
-        ok &= init_overlay_probe();
         ok &= init_motion_sequence_hooks();
         ok &= init_lens_sprite_hook();
         ok &= init_cross_fade_hook();
@@ -184,12 +189,12 @@ public unsafe sealed partial class Fps60Module : FhModule
                      $"vsync_interval={VSyncInterval}, keep_fps={KeepFps}, " +
                      $"sg_ratef={FhUtil.get_at<float>(EngineAddresses.SgRateF):F3}, " +
                      $"{particle_counts()}, {effect_counts()}, {kernel_counts()}, {motion_counts()}, {survey_counts()}, " +
-                     $"{overlay_probe_counts()}, {engine_state_counts()}, " +
+                     $"{engine_state_counts()}, " +
                      $"{motion_sequence_counts()}, " +
                      $"{frame_sequence_counts()}, {lens_sprite_counts()}, " +
                      $"{texture_animation_counts()} cam_acc={_camera_acc_calls} {motion_speed_counts()}, " +
                      $"{cross_fade_counts()}, {atel_wait_counts()}, " +
-                     $"{particle_timeline_counts()}");
+                     $"{particle_timeline_counts()}, {frame_skip_counts()}");
 
         _frames_at_last_sample = _frames;
         _last_sample = now;
@@ -234,7 +239,9 @@ public unsafe sealed partial class Fps60Module : FhModule
 
         _measured_framerate = adopted;
 
-        // The image patch has to know the rate, and only now does anyone.
+        // The image patches have to know the rate, and only now does anyone.
         patch_particle_timeline();
+        patch_battle_cursor_blink();
+        patch_dream_overlay_stars();
     }
 }

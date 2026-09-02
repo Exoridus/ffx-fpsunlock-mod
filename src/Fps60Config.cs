@@ -347,15 +347,27 @@ public sealed record Fps60Config
     public bool SurveyTextureAnimation { get; init; } = true;
 
     /// <summary>
-    ///     Report, immediately before every magic overlay unload, whether any live particle object
-    ///     still points at a program descriptor inside the image about to be unmapped.
+    ///     Move the battle command window's multi-target cursor blink to a higher bit of sg_count, so
+    ///     it blinks at the authored 15 Hz instead of at half the presented rate.
     ///
-    ///     An overlay ships its own _PPP_PROG records, and pppDeletePObject calls a step's destructor
-    ///     slot unconditionally when the object is torn down. One such descriptor at unload time is
-    ///     the whole crash; none across several battles falsifies the candidate. Costs one walk of
-    ///     the manager array per unload and changes nothing.
+    ///     sg_count itself cannot be rescaled - six of its readers pick a GS double buffer off its
+    ///     parity - so the correction is a one-byte change to the mask in the one instruction that
+    ///     reads it as a blink. A higher bit of a counter is still a fifty percent square wave, so
+    ///     the on-time is preserved along with the period.
     /// </summary>
-    public bool OverlayUnloadProbe { get; init; } = true;
+    public bool BattleCursorBlink { get; init; } = true;
+
+    /// <summary>
+    ///     Raise the star pass threshold of the dream and recall overlay, so its star field is
+    ///     redrawn at the authored 10 Hz instead of at a third of the presented rate.
+    ///
+    ///     The stars are drawn on one call in three and not at all on the other two, so raising the
+    ///     threshold restores the cadence but shortens the on-time in proportion: at 60 Hz the pass
+    ///     lands every sixth frame and lasts one frame instead of every third and lasting one. The
+    ///     alternative, holding graphicDrawDream itself, would alternate the full star field with the
+    ///     single cached quad its replay path draws, which is a visible flicker.
+    /// </summary>
+    public bool DreamOverlayStars { get; init; } = true;
 
     /// <summary>
     ///     Scale the sprite frame clock of the lens and flare family, which advances a fixed step per

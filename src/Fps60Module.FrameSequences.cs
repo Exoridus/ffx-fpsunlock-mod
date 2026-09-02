@@ -196,6 +196,14 @@ public unsafe sealed partial class Fps60Module
 
     private const int FmvPlaybackFlagOffset = 0x6D0;
 
+    /// <summary>
+    ///     A cheap plausibility gate rather than a real query. The manager pointer is read on every
+    ///     presented frame, including the frames before the manager exists and after it is gone, and
+    ///     the flag behind it is dereferenced without any other guard.
+    /// </summary>
+    private static bool mapped(nint address)
+        => address > 0x10000 && address < 0x7FFF0000;
+
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     private void h_video_update()
     {

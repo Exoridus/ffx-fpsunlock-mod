@@ -246,6 +246,12 @@ public unsafe sealed partial class Fps60Module
         new FhMethodHandle<d_advance_vblank>(new FhMethodLocation(EngineAddresses.AdvanceVBlankCounters, 0))
             .chain_from(h_advance_vblank).fnptr!(arg1);
 
+        // Between the original's write of the multi-pass counter and Sg_MainLoop's decrement of it,
+        // which is the only point where it holds the pass count for this frame. Before the delta
+        // check below, because a frame that added nothing to the counters is exactly the interesting
+        // case here.
+        sample_frame_skip();
+
         uint delta = FhUtil.get_at<uint>(EngineAddresses.SgVCount) - before;
         if (delta == 0) return;
 
