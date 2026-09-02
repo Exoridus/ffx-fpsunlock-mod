@@ -279,6 +279,18 @@ public static class EngineAddresses
     public const nint ChMotionInterpolate = 0x439630;
 
     /// <summary>
+    ///     The idle look-around, FUN_00834570(actor). Cdecl with one argument, measured: the body
+    ///     ends in a plain c3 and its only call site, inside the per-actor worker FUN_008335b0,
+    ///     pushes edi and clears eight bytes for this call and the aim blend together.
+    ///
+    ///     The argument is the actor pointer despite the decompiler typing it float: the entry loads
+    ///     [ebp+8] into edi and tests the byte at edi+0x4d4, the flag that says whether this actor
+    ///     looks around at all. Everything the function advances is counted in calls, and no branch
+    ///     in it reads sg_rate.
+    /// </summary>
+    public const nint ChIdleSway = 0x434570;
+
+    /// <summary>
     ///     graphicTextureVideoUpdate. The texture video path, which is not the FMV path and is not
     ///     reached by the FMV frameskip.
     /// </summary>

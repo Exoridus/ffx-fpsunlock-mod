@@ -403,6 +403,17 @@ public sealed record Fps60Config
     /// </summary>
     public bool EternalCalmCard { get; init; } = true;
 
+    /// <summary>
+    ///     Correct the idle look-around every standing actor runs. Its dwell and its step are both
+    ///     counted in calls and nothing in the engine scales them, so at 60 Hz a character turns its
+    ///     head twice as fast and twice as often as it was authored to.
+    ///
+    ///     The correction suppresses the advance on skipped frames rather than skipping the call:
+    ///     the call also rebuilds the rotation of the optpos element the following pass consumes,
+    ///     and a frame without it is a frame with that rotation unwritten.
+    /// </summary>
+    public bool IdleSway { get; init; } = true;
+
     /// <summary>Log measured present rate and frame delta statistics.</summary>
     public bool Telemetry { get; init; } = true;
 
