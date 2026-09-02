@@ -505,6 +505,13 @@ public sealed record Fps60Config
     /// <summary>Log measured present rate and frame delta statistics.</summary>
     public bool Telemetry { get; init; } = true;
 
+    /// <summary>
+    ///     Draws an on-screen clock, matching the log's own timestamp format, plus a compact
+    ///     counter view. A diagnostic aid for play-testing, not a gameplay feature: it lets a
+    ///     visual defect that leaves no log line of its own be timed against the log by eye.
+    /// </summary>
+    public bool TimerOverlay { get; init; }
+
     public static Fps60Config Load(string path)
     {
         if (!File.Exists(path)) return new Fps60Config();

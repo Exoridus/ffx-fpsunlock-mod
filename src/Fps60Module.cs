@@ -189,6 +189,13 @@ public unsafe sealed partial class Fps60Module : FhModule
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private TimeSpan _last_sample;
 
+    /// <summary>
+    ///     Seconds since this module's clock started. The one source the timer overlay draws and
+    ///     the telemetry line logs, so a value read off the screen and a value read off the log
+    ///     for the same instant always agree.
+    /// </summary>
+    private double ElapsedSeconds => _clock.Elapsed.TotalSeconds;
+
     /// <summary>True once the engine has been seen pacing itself from syncdata during this window.</summary>
     private bool _rate_window_sync_paced;
     private long _rate_windows_discarded;
@@ -228,7 +235,10 @@ public unsafe sealed partial class Fps60Module : FhModule
 
         if (_config.Telemetry)
         {
-            _logger.Info($"[Fps60] present {fps:F1} fps over the last {(now - _last_sample).TotalSeconds:F1}s, " +
+            // t is ElapsedSeconds, the same clock the timer overlay draws - printed here regardless
+            // of whether that overlay is on, so a symptom named by its on-screen value is always
+            // findable by an exact string match rather than by arithmetic on two clocks.
+            _logger.Info($"[Fps60] t={ElapsedSeconds:F1} present {fps:F1} fps over the last {(now - _last_sample).TotalSeconds:F1}s, " +
                          $"vsync_interval={VSyncInterval}, keep_fps={KeepFps}, " +
                          $"sg_ratef={FhUtil.get_at<float>(EngineAddresses.SgRateF):F3}, " +
                          $"{particle_counts()}, {effect_counts()}, {kernel_counts()}, {motion_counts()}, {survey_counts()}, " +
