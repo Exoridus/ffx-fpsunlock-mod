@@ -218,6 +218,20 @@ public unsafe sealed partial class Fps60Module : FhModule
     ///     every correction running on the rate the limiter implied rather than the one the display
     ///     actually has.
     /// </summary>
+    /* Every per-subsystem counter as one string. Shared by the periodic telemetry line and by the
+     * overlay's marker button so the two can never drift into reporting different sets. */
+    private string counter_snapshot()
+        => $"{particle_counts()}, {effect_counts()}, {kernel_counts()}, {motion_counts()}, {survey_counts()}, " +
+           $"{engine_state_counts()}, " +
+           $"{motion_sequence_counts()}, " +
+           $"{frame_sequence_counts()}, {lens_sprite_counts()}, " +
+           $"{texture_animation_counts()} cam_acc={_camera_acc_calls} {motion_speed_counts()}, " +
+           $"{cross_fade_counts()}, {atel_wait_counts()}, " +
+           $"{particle_timeline_counts()}, {frame_skip_counts()}, {eternal_calm_counts()}, " +
+           $"{idle_sway_counts()}, {neck_counts()}, {buoyancy_counts()}, " +
+           $"{atel_worker_motion_counts()}, {overlay_spawn_gate_counts()}, " +
+           $"{rate_guard_counts()}";
+
     private void sample_present_rate()
     {
         // Latched every frame rather than read at the window's two edges. A syncdata scene shorter
@@ -241,16 +255,7 @@ public unsafe sealed partial class Fps60Module : FhModule
             _logger.Info($"[Fps60] t={ElapsedSeconds:F1} present {fps:F1} fps over the last {(now - _last_sample).TotalSeconds:F1}s, " +
                          $"vsync_interval={VSyncInterval}, keep_fps={KeepFps}, " +
                          $"sg_ratef={FhUtil.get_at<float>(EngineAddresses.SgRateF):F3}, " +
-                         $"{particle_counts()}, {effect_counts()}, {kernel_counts()}, {motion_counts()}, {survey_counts()}, " +
-                         $"{engine_state_counts()}, " +
-                         $"{motion_sequence_counts()}, " +
-                         $"{frame_sequence_counts()}, {lens_sprite_counts()}, " +
-                         $"{texture_animation_counts()} cam_acc={_camera_acc_calls} {motion_speed_counts()}, " +
-                         $"{cross_fade_counts()}, {atel_wait_counts()}, " +
-                         $"{particle_timeline_counts()}, {frame_skip_counts()}, {eternal_calm_counts()}, " +
-                         $"{idle_sway_counts()}, {neck_counts()}, {buoyancy_counts()}, " +
-                         $"{atel_worker_motion_counts()}, {overlay_spawn_gate_counts()}, " +
-                         $"{rate_guard_counts()}");
+                         $"{counter_snapshot()}");
         }
 
         // After the adoption has read it, so the window the flag describes is the one just measured.

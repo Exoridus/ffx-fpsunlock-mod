@@ -37,7 +37,13 @@ public unsafe sealed partial class Fps60Module
             if (ImGui.Button("Marker"))
             {
                 _overlay_marker_count++;
-                _logger.Info($"[Fps60] Marker {_overlay_marker_count} at t={ElapsedSeconds:F1}.");
+
+                // The whole counter set, not just the time. A marker exists to capture the state at
+                // the instant a defect was seen; the periodic sample is up to five seconds away from
+                // that instant in either direction, which is long enough for the counters that move
+                // per frame to say nothing about it.
+                _logger.Info($"[Fps60] MARKER {_overlay_marker_count} at t={ElapsedSeconds:F1}, " +
+                             $"scale={Scale:F3}, {counter_snapshot()}");
             }
 
             ImGui.Separator();
