@@ -111,8 +111,24 @@ public static class EngineAddresses
     /// <summary>Sg_Flash(frame_count, ...). ATEL call target 4003.</summary>
     public const nint SgFlash = 0x42CD20;
 
-    /// <summary>Sg_AccSetAlpha(alpha, frame_count). ATEL call target 401A.</summary>
+    /// <summary>
+    ///     Sg_AccSetAlpha(alpha, frame_count). Cdecl, measured: the body ends in a tail jmp to
+    ///     graphicUpdateCrossFade after a plain pop ebp, and that target cleans through the caller.
+    ///     ATEL call target 401A, where the first pushed argument is the alpha and the second the
+    ///     frame count, the opposite of what the script dumps label them.
+    ///
+    ///     It seeds filter slot 0 rather than expressing a duration: the stored step is
+    ///     max(1, |alpha - current| / frame_count), so a doubled frame count cannot buy a half step
+    ///     once |delta| drops below it. See Fps60Module.CrossFade.
+    /// </summary>
     public const nint SgAccSetAlpha = 0x42BD90;
+
+    /// <summary>
+    ///     Sg_DrawFilter(). Cdecl and void, measured: a plain c3 at 0x0082C276, and its one call
+    ///     site in Sg_MainLoop pushes nothing and cleans nothing. Runs once per main loop pass and
+    ///     steps all five filter slots.
+    /// </summary>
+    public const nint SgDrawFilter = 0x42C140;
 
     /// <summary>TkSetFadeOut(frame_count). ATEL call target 00BB; also reachable outside it.</summary>
     public const nint TkSetFadeOut = 0x48EAC0;
@@ -264,6 +280,21 @@ public static class EngineAddresses
     public const nint FmvPlayerManager = 0x8DED2C;
 
     // --- Globals (RVA, same convention as the hook targets) ---
+
+    /// <summary>
+    ///     short. Filter slot 0's remaining step count, and the only field of the slot whose reaching
+    ///     zero ends the cross-fade. Sg_AccSetAlpha hands its address to PostProcessManager, which
+    ///     keeps the pointer and dereferences it on every rendered frame, so writing it directly is
+    ///     seen without going back through the setter.
+    /// </summary>
+    public const nint CrossFadeSlot0Counter = 0xF006C4;
+
+    /// <summary>
+    ///     short. Filter slot 0's current alpha, 0 to 0x80. On the HD build this is the motion blur
+    ///     weight: the render pass divides it by 128 and hands it to MotionBlur::setMotionBlurWeight.
+    ///     Restoring it after the engine has cleared it is what would leave a permanent trail.
+    /// </summary>
+    public const nint CrossFadeSlot0Alpha = 0xF006C6;
 
     /// <summary>uint. Target framerate is 60 / this. The engine uses 1 in menus and 2 elsewhere.</summary>
     public const nint SFlipVSyncInterval = 0x830E88;

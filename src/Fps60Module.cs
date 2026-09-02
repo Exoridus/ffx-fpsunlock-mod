@@ -97,6 +97,7 @@ public unsafe sealed partial class Fps60Module : FhModule
         ok &= init_overlay_probe();
         ok &= init_motion_sequence_hooks();
         ok &= init_lens_sprite_hook();
+        ok &= init_cross_fade_hook();
         
 
         _sync_aware = _config.SyncDataAware;
@@ -187,6 +188,7 @@ public unsafe sealed partial class Fps60Module : FhModule
                      $"{motion_sequence_counts()}, " +
                      $"{frame_sequence_counts()}, {lens_sprite_counts()}, " +
                      $"{texture_animation_counts()} cam_acc={_camera_acc_calls} {motion_speed_counts()}, " +
+                     $"{cross_fade_counts()}, " +
                      $"{particle_timeline_counts()}");
 
         _frames_at_last_sample = _frames;

@@ -105,10 +105,17 @@ public unsafe sealed partial class Fps60Module
                 () => new FhMethodHandle<d_fade_common>(new FhMethodLocation(EngineAddresses.SgFadeCommon, 0)).hook(this, h_fade_common));
             ok &= hook_or_log("Sg_Flash", EngineAddresses.SgFlash,
                 () => new FhMethodHandle<d_sg_flash>(new FhMethodLocation(EngineAddresses.SgFlash, 0)).hook(this, h_sg_flash));
-            ok &= hook_or_log("Sg_AccSetAlpha", EngineAddresses.SgAccSetAlpha,
-                () => new FhMethodHandle<d_acc_set_alpha>(new FhMethodLocation(EngineAddresses.SgAccSetAlpha, 0)).hook(this, h_acc_set_alpha));
             ok &= hook_or_log("TkSetFadeOut", EngineAddresses.TkSetFadeOut,
                 () => new FhMethodHandle<d_tk_set_fade_out>(new FhMethodLocation(EngineAddresses.TkSetFadeOut, 0)).hook(this, h_tk_set_fade_out));
+        }
+
+        // The cross-fade setter is the only place the slot 0 hold can see the engine re-entering
+        // Sg_AccSetAlpha, so it is installed whenever either of the two corrections is on. With
+        // CrossFadeHold set it stops scaling and only carries that flag.
+        if (_config.Fades || _config.CrossFadeHold)
+        {
+            ok &= hook_or_log("Sg_AccSetAlpha", EngineAddresses.SgAccSetAlpha,
+                () => new FhMethodHandle<d_acc_set_alpha>(new FhMethodLocation(EngineAddresses.SgAccSetAlpha, 0)).hook(this, h_acc_set_alpha));
         }
 
         if (_config.Motion)
@@ -308,11 +315,16 @@ public unsafe sealed partial class Fps60Module
             .chain_from(h_sg_flash).fnptr!(scale_up(frames), arg2, arg3, arg4);
     }
 
+    /* The frame count goes through untouched under CrossFadeHold: the slot it seeds is stepped by a
+     * clamped integer, so the correction is the hold in Fps60Module.CrossFade and scaling here as
+     * well would slow the ramp twice. The flag it raises is read by that hold and by nothing else. */
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     private void h_acc_set_alpha(ushort alpha, ushort frames)
     {
+        _acc_set_alpha_reentered = true;
+
         new FhMethodHandle<d_acc_set_alpha>(new FhMethodLocation(EngineAddresses.SgAccSetAlpha, 0))
-            .chain_from(h_acc_set_alpha).fnptr!(alpha, scale_up(frames));
+            .chain_from(h_acc_set_alpha).fnptr!(alpha, _cross_fade_hold_active ? frames : scale_up(frames));
     }
 
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]

@@ -50,6 +50,24 @@ public sealed record Fps60Config
     /// <summary>Retime fade, flash and alpha ramps.</summary>
     public bool Fades { get; init; } = true;
 
+    /// <summary>
+    ///     Correct the camera cross-fade by holding filter slot 0 instead of scaling the frame count
+    ///     Sg_AccSetAlpha receives.
+    ///
+    ///     Slot 0 is the one filter slot that does not recompute its alpha from a counter and a
+    ///     total. It walks by a step fixed once at max(1, |alpha - current| / frames), and that step
+    ///     is an integer with a floor of 1, so once frames exceeds the alpha delta a doubled frame
+    ///     count buys nothing and the fade runs at twice the speed it should. Across the 425 ramping
+    ///     call sites in the script corpus the delta is always 128, and 61 of them come out wrong in
+    ///     one direction or the other: frames=120 finishes twice too fast, frames=35 takes half again
+    ///     as long as it should.
+    ///
+    ///     Holding the slot emits the engine's own integer sequence at half rate, which is exact in
+    ///     both directions. The two halves are one switch because they only work together: passing
+    ///     the frame count through without the hold leaves every cross-fade twice too fast.
+    /// </summary>
+    public bool CrossFadeHold { get; init; } = true;
+
     /// <summary>Retime motion and effect speeds.</summary>
     public bool Motion { get; init; } = true;
 
