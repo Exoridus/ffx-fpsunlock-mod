@@ -37,10 +37,14 @@ public static class EngineAddresses
     /// </summary>
     public const nint AdvanceVBlankCounters = 0x421F90;
 
-    /// <summary>Sg_SetKeepFps. Cdecl, sbyte in/out. There is no matching getter in the engine.</summary>
+    /// <summary>Sg_SetKeepFps. Cdecl, sbyte in, returns the previous value.</summary>
     public const nint SgSetKeepFps = 0x421C00;
 
-    /// <summary>Sg_GetKeepFps.</summary>
+    /// <summary>
+    ///     Sg_GetKeepFps. Cdecl, no parameters, returns the sbyte at <see cref="SgKeepFps"/>. Its
+    ///     only non-debug caller is the motion advance; the other three are the debug window's
+    ///     label, its toggle, and yiAnimInfo_init.
+    /// </summary>
     public const nint SgGetKeepFps = 0x4206B0;
 
     /// <summary>

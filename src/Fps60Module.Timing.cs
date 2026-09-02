@@ -50,10 +50,14 @@ public unsafe sealed partial class Fps60Module
     ///
     ///     The advance at 0x00838d10 guards that multiplication with both KEEP_FPS and the actor's
     ///     own flag 0x100000, which reads as "an actor without the flag is never corrected, so the
-    ///     module must correct it". Measured 2026-08-30, acting on that made things worse: a cutscene
-    ///     ran at half speed and then stalled outright. Something else corrects those actors too, and
-    ///     until that is found the decision stays on KEEP_FPS alone. <see cref="Fps60Config.MotionPerActor"/>
-    ///     turns the per-actor rule back on for the next attempt.
+    ///     module must correct it". Acting on that made things worse: a cutscene ran at half speed
+    ///     and then stalled outright.
+    ///
+    ///     Nothing else corrects those actors, and that is not the reason to leave them alone. They
+    ///     are actors a cutscene script opted out through ChEvent.setKeepFps, and the scene's own
+    ///     timing counts on their motion advancing once per call, so halving their step desynchronises
+    ///     the scene from the motion it waits on. The decision therefore stays on KEEP_FPS alone, and
+    ///     <see cref="Fps60Config.MotionPerActor"/> is kept only to measure one scene at a time.
     /// </summary>
     private bool engine_corrects_motion(nint ptr_actor)
     {
@@ -339,9 +343,9 @@ public unsafe sealed partial class Fps60Module
     /* Animation speed follows motion speed unless keep-FPS is asserted, in which case the engine
      * already retimes animations off sg_rate and scaling here would slow them twice.
      *
-     * The engine can also assert keep-FPS per actor, and provides no getter for that state, so this
-     * prototype only honours the global flag. Actors that carry the per-actor flag while the global
-     * one is clear are still retimed and will run at half speed. */
+     * The engine also carries a per-actor keep-FPS bit, and the advance requires both it and the
+     * global flag. This honours the global one only: an actor without the bit was opted out by its
+     * scene, so retiming it here would overrule that scene rather than correct it. */
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     /* KEEP_FPS alone does not mean the engine corrects the actor. The motion advance computes
      * (speed * factor >> 8) * scale / 0x1e00 and only then, guarded by BOTH Sg_GetKeepFps() and the

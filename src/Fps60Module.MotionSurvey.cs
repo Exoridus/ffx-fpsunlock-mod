@@ -15,11 +15,12 @@ namespace Fahrenheit.Mods.Fps60;
 ///             again with no rate correction.</item>
 ///     </list>
 ///
-///     So two of the three paths cannot be corrected by KEEP_FPS at all, and the first is gated on
-///     a bit nothing in the decompilation ever sets. Forcing the correction for every actor was
-///     tried and made a cutscene run at half speed and then stall, so the answer is not "set it
-///     everywhere". This counts which path each actor actually takes, which is the measurement that
-///     was missing.
+///     So two of the three paths cannot be corrected by KEEP_FPS at all. The first is gated on a bit
+///     Ch_Allocate sets on every actor and only ChEvent.setKeepFps clears, so an actor that reaches
+///     the advance without it was opted out by a cutscene script rather than left out by its data.
+///     Forcing the correction for every actor was tried and made a cutscene run at half speed and
+///     then stall, so the answer is not "set it everywhere". This counts which path each actor
+///     actually takes, which is the measurement that was missing.
 ///
 ///     The counts alone say how many actors run uncorrected but not which, so each path also names
 ///     the actors that reach it, once per distinct identity rather than once per frame.
@@ -93,7 +94,9 @@ public unsafe sealed partial class Fps60Module
 
     private bool init_motion_survey()
     {
-        if (!_config.MotionSurvey) return true;
+        // The lend rides on this hook, so it has to install for either option. Gating it on the
+        // survey alone left the lend silently inert on any config that did not also ask to count.
+        if (!_config.MotionSurvey && !_config.MotionAdvanceLendFlag) return true;
 
         return hook_or_log("motion advance", EngineAddresses.MotionAdvance,
             () => new FhMethodHandle<d_motion_advance>(new FhMethodLocation(EngineAddresses.MotionAdvance, 0))
@@ -106,11 +109,14 @@ public unsafe sealed partial class Fps60Module
     /* Counts, and where asked to, lends the rate flag.
      *
      * The survey established the population: 70,353 of 71,171 calls in one intro take the corrected
-     * path and 818 do not. Those 818 advance at the presented rate, which is what a single animation
-     * that is still too fast looks like while everything around it is right. They cannot be reached
-     * through Ch_SetMotionSpeed - the same run saw 70 calls to that setter in total - so the actor is
-     * handed the bit the engine tests for, the engine does its own arithmetic, and the bit is put
-     * back. Nothing is computed here.
+     * path and 818 do not. Those 818 are the actors a cutscene script cleared the bit on, so lending
+     * it overrules the scene rather than repairing an omission, and the lend is off by default for
+     * that reason. It is kept as a way to measure what overruling one scene costs.
+     *
+     * Nothing is computed here when it is on: the actor is handed the bit the engine tests for, the
+     * engine does its own arithmetic, and the bit is put back. The global KEEP_FPS still has to be
+     * asserted, because a scene that cleared that has turned the correction off for every actor and
+     * lending into it would correct exactly the subset the scripts opted out twice over.
      *
      * Actors on the 0x40 path are left alone: the engine never applies sg_rate there, so lending the
      * bit would change nothing. */

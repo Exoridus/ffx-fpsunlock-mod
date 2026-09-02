@@ -80,18 +80,23 @@ public sealed record Fps60Config
 
     /// <summary>
     ///     Lend the engine's rate flag to the actors that reach the motion advance without it, for
-    ///     the duration of that call only.
+    ///     the duration of that call only. Off, because those actors are meant to run uncorrected.
     ///
-    ///     Measured over a full intro: 818 of 71,171 calls take the uncorrected path, and those
-    ///     actors advance at the presented rate - which is what a still-too-fast animation looks
-    ///     like while everything around it is right. They cannot be reached through
-    ///     Ch_SetMotionSpeed, since the same run saw only 70 calls to it in total.
+    ///     The bit is not missing from them. Ch_Allocate sets it on every actor it creates, and the
+    ///     only other writer is the ATEL call target ChEvent.setKeepFps, which cutscene scripts use
+    ///     to clear it - 22 of its 26 call sites in the script corpus pass false. An actor on the
+    ///     uncorrected path is therefore one a scene deliberately opted out of the engine's own rate
+    ///     correction, usually because the scene's own timing counts on that motion advancing once
+    ///     per call rather than once per unit of time.
     ///
-    ///     This is not the same thing as MotionPerActor, which changed what this module scales on
-    ///     the way in and made a cutscene stall. Here nothing is computed: the actor is handed the
-    ///     bit the engine tests for, the engine does its own arithmetic, and the bit is put back.
+    ///     Lending the bit makes the engine multiply that actor's accumulator step by sg_rate, which
+    ///     at 60 Hz halves it. That is the same arithmetic as MotionPerActor, which halves the motion
+    ///     speed multiplier feeding the same step, and MotionPerActor is what made a cutscene run at
+    ///     half speed and then stall. The mechanism differs, the result does not. Correcting these
+    ///     actors is a per scene decision, not a blanket one, so this stays available for measuring
+    ///     one scene at a time and stays off otherwise.
     /// </summary>
-    public bool MotionAdvanceLendFlag { get; init; } = true;
+    public bool MotionAdvanceLendFlag { get; init; }
 
     /// <summary>Retime the battle limit timer.</summary>
     public bool BattleTimers { get; init; } = true;
@@ -295,11 +300,12 @@ public sealed record Fps60Config
     ///     Count how the per-actor motion advance classifies the actors a scene runs, without
     ///     changing anything.
     ///
-    ///     Its rate correction is gated on the actor's flag 0x100000, and nothing in the
-    ///     decompilation ever sets that bit - the only place it appears for this field is
-    ///     Ch_WorkRestore, which copies it from another actor. So either it arrives with loaded
-    ///     data or it is never set at all, and which of those is true decides whether the NPC
-    ///     problem is a missing flag or a second uncorrected path. The counters answer it.
+    ///     Its rate correction is gated on the actor's flag 0x100000 and on the global KEEP_FPS.
+    ///     Ch_Allocate sets the actor flag on every actor and only ChEvent.setKeepFps clears it, so
+    ///     the counters separate the actors a cutscene script opted out from the rest, and name
+    ///     them. An earlier reading held that nothing in the executable set the bit; the write is an
+    ///     XOR mask rather than an OR, which is why an enumeration of OR and TEST operations missed
+    ///     it.
     /// </summary>
     public bool MotionSurvey { get; init; }
 
