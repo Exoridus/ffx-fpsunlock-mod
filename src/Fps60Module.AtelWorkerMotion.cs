@@ -120,13 +120,13 @@ public unsafe sealed partial class Fps60Module
     private static readonly (string Name, nint Rva)[] AtelDeadlineSettersAllLevels =
     [
         ("setTurningDuration [0074h]", EngineAddresses.AtelSetTurnDeadlineAllLevels),
-        ("setRotationDeadlineAllLevels [0075h]", EngineAddresses.AtelSetRotDeadlineAllLevels),
+        ("ATEL [0075h]", EngineAddresses.AtelSetRotDeadlineAllLevels),
     ];
 
     private static readonly (string Name, nint Rva)[] AtelDeadlineSettersOneLevel =
     [
-        ("setTurningDuration [0072h]", EngineAddresses.AtelSetTurnDeadline),
-        ("setRotationDeadline [0073h]", EngineAddresses.AtelSetRotDeadline),
+        ("ATEL [0072h]", EngineAddresses.AtelSetTurnDeadline),
+        ("ATEL [0073h]", EngineAddresses.AtelSetRotDeadline),
     ];
 
     /* The chain is keyed by delegate instance, so each of the sixteen setters needs one of its own;

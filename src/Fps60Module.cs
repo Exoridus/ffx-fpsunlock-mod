@@ -111,7 +111,6 @@ public unsafe sealed partial class Fps60Module : FhModule
         // Before the game's own entry point runs, so before any magic overlay can have been loaded
         // and snapshotted the slot this rewrites.
         init_overlay_spawn_gate();
-        
 
         _sync_aware = _config.SyncDataAware;
         _vsync_interval_target = _config.PresentInterval;
