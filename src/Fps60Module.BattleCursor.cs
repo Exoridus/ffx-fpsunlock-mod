@@ -31,11 +31,14 @@ namespace Fahrenheit.Mods.Fps60;
 public unsafe sealed partial class Fps60Module
 {
     /// <summary>
-    ///     <c>F6 05 &lt;sg_count&gt; imm8</c>. The immediate is the seventh byte, and the six that
-    ///     precede it are checked before anything is written: a wrong address here rewrites an
-    ///     instruction rather than failing.
+    ///     <c>F6 05 &lt;sg_count&gt; imm8</c>. The two opcode bytes are a build-time constant, but the
+    ///     four-byte address operand carries a base relocation like every other absolute reference in
+    ///     the image, so it is resolved and compared at runtime against
+    ///     <see cref="EngineAddresses.SgCount"/> rather than against the address the linker baked in
+    ///     here.
     /// </summary>
-    private static ReadOnlySpan<byte> BlinkGatePrefix => [0xF6, 0x05, 0xF0, 0xBB, 0x3C, 0x02];
+    private static ReadOnlySpan<byte> BlinkGateOpcode => [0xF6, 0x05];
+    private const int BlinkGateOperandOffset = 2;
     private const int BlinkMaskOffset = 6;
     private const byte VanillaBlinkMask = 0x01;
 
@@ -66,17 +69,24 @@ public unsafe sealed partial class Fps60Module
         byte* site = FhUtil.ptr_at<byte>(EngineAddresses.BattleCursorBlinkGate);
         byte current = site[BlinkMaskOffset];
 
+        // The operand is resolved at runtime rather than compared against the linked constant,
+        // because it carries a base relocation like every other absolute reference in the image and
+        // holds a different value on every load that is not at the preferred base.
+        uint expectedOperand = (uint)(nint)FhUtil.ptr_at<byte>(EngineAddresses.SgCount);
+        uint actualOperand   = *(uint*)(site + BlinkGateOperandOffset);
+
         // Either untouched or carrying a mask this module wrote earlier; a mask with more than one
         // bit set is not the instruction we think it is.
-        bool matches = new ReadOnlySpan<byte>(site, BlinkGatePrefix.Length).SequenceEqual(BlinkGatePrefix)
+        bool matches = site[0] == BlinkGateOpcode[0] && site[1] == BlinkGateOpcode[1]
+                    && actualOperand == expectedOperand
                     && current != 0 && (current & (current - 1)) == 0;
 
         if (!matches)
         {
             _logger.Error($"[Fps60] Battle cursor blink gate at RVA 0x{EngineAddresses.BattleCursorBlinkGate:X} " +
-                          $"does not carry the expected instruction; nothing written. Found " +
-                          $"{site[0]:X2} {site[1]:X2} {site[2]:X2} {site[3]:X2} {site[4]:X2} {site[5]:X2} " +
-                          $"mask=0x{current:X2}.");
+                          $"does not carry the expected instruction; nothing written. Expected " +
+                          $"{BlinkGateOpcode[0]:X2} {BlinkGateOpcode[1]:X2} operand 0x{expectedOperand:X8}, found " +
+                          $"{site[0]:X2} {site[1]:X2} operand 0x{actualOperand:X8} mask=0x{current:X2}.");
             return;
         }
 
