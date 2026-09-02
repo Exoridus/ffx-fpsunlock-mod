@@ -3,9 +3,10 @@ namespace Fahrenheit.Mods.Fps60;
 /// <summary>
 ///     The field particle group restart countdown, which is a pass count with no time term.
 ///
-///     pppFpLoop keeps one at each manager's +0x00. While it is zero or above the group is skipped
-///     outright - not advanced and not drawn - and the countdown is decremented once for that pass;
-///     at -1 every live object is freed and the group is started again through _pppStartPart. So the
+///     pppFpLoop keeps one at each manager's +0x00 and decrements it once per pass before testing
+///     the result. While the result is still zero or above the group is skipped outright - not
+///     advanced and not drawn; at -1 every live object is freed and the group is started again
+///     through _pppStartPart, in the same pass as the decrement. So the
 ///     stretch during which the group is absent, and the instant it comes back, are both measured in
 ///     passes. At twice the pass rate both happen in half the authored wall time, which is the
 ///     vanishing and popping in that field particles show at 60 Hz.

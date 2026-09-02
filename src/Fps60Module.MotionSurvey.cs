@@ -275,7 +275,7 @@ public unsafe sealed partial class Fps60Module
                     held = true;
                     _motion_held++;
                 }
-                else if (_config.MotionAdvanceLendFlag)
+                else if (_config.MotionAdvanceLendFlag && !_config.MotionHoldOptedOut)
                 {
                     if (opted_out)     { *flags_ptr = flags | MotionFlagRated;              lent_flag   = true; }
                     if (keep_fps == 0) { FhUtil.set_at(EngineAddresses.SgKeepFps, (sbyte)1); lent_global = true; }

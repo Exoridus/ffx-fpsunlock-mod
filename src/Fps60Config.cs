@@ -309,11 +309,11 @@ public sealed record Fps60Config
     ///     Hold the field particle group restart countdown on skipped frames, so a group's absence
     ///     and its restart land at the wall time they were authored for.
     ///
-    ///     pppFpLoop decrements a counter at each manager's +0x00 once per pass with no time term.
-    ///     While it is zero or above the group is skipped outright, drawing nothing, and at -1 every
-    ///     object is freed and the group is started again. At 60 Hz that absence lasts half as long
-    ///     as it should and the restart arrives twice as early, which is field particles vanishing
-    ///     and popping back in.
+    ///     pppFpLoop decrements a counter at each manager's +0x00 once per pass with no time term,
+    ///     then tests the result. While the result is still zero or above the group is skipped
+    ///     outright, drawing nothing; at -1 every object is freed and the group is started again in
+    ///     the same pass as the decrement. At 60 Hz that absence lasts half as long as it should and
+    ///     the restart arrives twice as early, which is field particles vanishing and popping back in.
     ///
     ///     It is not a hold on the call. The draw packet is built inside the same pass as the
     ///     advance, so skipping any part of pppFpLoop would drop a group's contribution to the frame;

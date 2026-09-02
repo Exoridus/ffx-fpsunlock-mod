@@ -6,11 +6,12 @@ namespace Fahrenheit.Mods.Fps60;
 ///
 ///     Field particle groups vanish and come back, and two candidate causes are left. pppFpLoop
 ///     keeps a restart countdown at manager+0x00 which it decrements once per pass, with no time
-///     term at all: while it is still zero or above the group is skipped outright - not advanced,
-///     not drawn - and at -1 every object is freed and the group is started again. That is a
-///     pass-counted duration, so at twice the pass rate it elapses in half the wall clock time. The
-///     other candidate is pppCheckViewCylinder, which is vanilla, camera driven and rate
-///     independent, and which nothing in this module could have changed.
+///     term at all, and then tests the result: while the result is still zero or above the group
+///     is skipped outright - not advanced, not drawn - and at -1 every object is freed and the
+///     group is started again in the same pass as the decrement. That is a pass-counted duration,
+///     so at twice the pass rate it elapses in half the wall clock time. The other candidate is
+///     pppCheckViewCylinder, which is vanilla, camera driven and rate independent, and which
+///     nothing in this module could have changed.
 ///
 ///     The countdown is what this reads, and the two end-condition flags beside it are what says
 ///     which kind of group is being looked at: _pppRunPartFp ends a group on its authored death
