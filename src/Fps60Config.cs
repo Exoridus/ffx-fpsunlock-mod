@@ -60,6 +60,21 @@ public sealed record Fps60Config
     /// </summary>
     public bool MotionPerActor { get; init; }
 
+    /// <summary>
+    ///     Lend the engine's rate flag to the actors that reach the motion advance without it, for
+    ///     the duration of that call only.
+    ///
+    ///     Measured over a full intro: 818 of 71,171 calls take the uncorrected path, and those
+    ///     actors advance at the presented rate - which is what a still-too-fast animation looks
+    ///     like while everything around it is right. They cannot be reached through
+    ///     Ch_SetMotionSpeed, since the same run saw only 70 calls to it in total.
+    ///
+    ///     This is not the same thing as MotionPerActor, which changed what this module scales on
+    ///     the way in and made a cutscene stall. Here nothing is computed: the actor is handed the
+    ///     bit the engine tests for, the engine does its own arithmetic, and the bit is put back.
+    /// </summary>
+    public bool MotionAdvanceLendFlag { get; init; } = true;
+
     /// <summary>Retime the battle limit timer.</summary>
     public bool BattleTimers { get; init; } = true;
 
@@ -238,14 +253,25 @@ public sealed record Fps60Config
     ///     Force the event worker's animation curves onto the vertical blank clock.
     ///
     ///     yiAnimInfo_init copies KEEP_FPS into the mode global once, and the worker then reads
-    ///     either yiGetVCount, which this module rescales, or yiGetFCount, which is sg_count * 2 and
-    ///     nothing rescales. Which one a scene gets therefore depends on what KEEP_FPS happened to
-    ///     be at init - and KEEP_FPS is observed toggling during play. Forcing the mode removes the
-    ///     coin flip.
+    ///     either yiGetVCount, which this module rescales, or yiGetFCount, which is sg_count * 2.
     ///
-    ///     Untested in a running game. Off until it has been looked at.
+    ///     This is not a choice between two equivalent clocks. sg_count is incremented once per
+    ///     Sg_MainLoop pass, so it runs at the presented rate, and it cannot be rescaled: six
+    ///     consumers select a GS double buffer off its parity. The yiGetFCount branch is therefore
+    ///     twice too fast at 60 Hz with no way to correct it in place, while the vblank branch is
+    ///     delta-measured and correct. The worker divides a difference of two samples by a duration
+    ///     held in the animation record, both in counter units, so curve progress is directly
+    ///     proportional to the counter rate and nothing downstream absorbs the factor.
+    ///
+    ///     Forcing the mode is safe by construction: yiAnimInfo_init zeroes the start and now
+    ///     stamps of all 64 tracks before this module writes the mode, so no track can end up with
+    ///     its two timestamps taken from different clocks.
+    ///
+    ///     One documented behaviour change: below the target rate, forced vblank curves keep
+    ///     running on wall clock instead of slowing with the rendered frames. That is what every
+    ///     battle and the ~20 scenes calling sgSetKeepFps(1|2) already do.
     /// </summary>
-    public bool EventClockOnVblank { get; init; }
+    public bool EventClockOnVblank { get; init; } = true;
 
     /// <summary>
     ///     Count how the per-actor motion advance classifies the actors a scene runs, without

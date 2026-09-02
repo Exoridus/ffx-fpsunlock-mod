@@ -256,6 +256,13 @@ public static class EngineAddresses
     /// </summary>
     public const nint GraphicVideoUpdate = 0x245FA0;
 
+    /// <summary>
+    ///     sFMVPlayerManager, the PhyFMVPlayerManager singleton pointer. Byte 0x6D0 of the instance
+    ///     is the playback flag graphicVideoUpdate tests before it does anything: while it is clear
+    ///     the function returns immediately, so a call is not a video frame.
+    /// </summary>
+    public const nint FmvPlayerManager = 0x8DED2C;
+
     // --- Globals (RVA, same convention as the hook targets) ---
 
     /// <summary>uint. Target framerate is 60 / this. The engine uses 1 in menus and 2 elsewhere.</summary>

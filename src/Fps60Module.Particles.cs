@@ -75,11 +75,22 @@ public unsafe sealed partial class Fps60Module
      * pass runs; scaling the step on top of that would stretch every lifetime to twice its wall
      * clock length. */
     private int scale_particle_step(int step)
+    {
         // A step of zero is a manager that is not meant to advance; scaling it is meaningless, and
         // rounding a small step to zero would freeze the effect outright.
-        => _config.ParticleHold || step <= 0 || !(_config.Particles || _config.ParticleTimeline)
-            ? step
-            : Math.Max(1, (int)Math.Round(step / Scale));
+        if (_config.ParticleHold || step <= 0) return step;
+
+        // The emission clock has to move by exactly the factor the object age moved by, and the age
+        // is patched with an integer divisor rather than with Scale: the halved age sequence only
+        // contains every value the old one reached when the step divides 0x1000 exactly. Deriving
+        // the emission factor from Scale instead lets the two drift apart at any rate that is not a
+        // whole multiple of 30 - at 50 Hz the age would step by 0x1000/2 while emission slowed by
+        // 1.67 - which is the doubled standing population the timeline patch exists to avoid.
+        if (_config.ParticleTimeline)
+            return _timeline_step <= 0 ? step : Math.Max(1, step / (VanillaAgeStep / _timeline_step));
+
+        return _config.Particles ? Math.Max(1, (int)Math.Round(step / Scale)) : step;
+    }
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_ppp_start_part(nint manager, int time_step, nint data, int flags);

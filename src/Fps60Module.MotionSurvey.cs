@@ -56,9 +56,11 @@ public unsafe sealed partial class Fps60Module
     private readonly HashSet<ulong> _motion_identities = [];
     private readonly Dictionary<string, int> _motion_named_per_path = [];
 
+    private long _motion_lent;
+
     private string motion_counts()
         => $"mot_calls={_motion_calls} mot_rated={_motion_rated} mot_plain={_motion_plain} " +
-           $"mot_alt={_motion_alt} mot_bits=0x{_motion_flags_seen:X} " +
+           $"mot_alt={_motion_alt} mot_lent={_motion_lent} mot_bits=0x{_motion_flags_seen:X} " +
            $"mot_named={_motion_identities.Count}";
 
     /// <summary>
@@ -101,22 +103,56 @@ public unsafe sealed partial class Fps60Module
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_motion_advance(nint actor, int mode);
 
+    /* Counts, and where asked to, lends the rate flag.
+     *
+     * The survey established the population: 70,353 of 71,171 calls in one intro take the corrected
+     * path and 818 do not. Those 818 advance at the presented rate, which is what a single animation
+     * that is still too fast looks like while everything around it is right. They cannot be reached
+     * through Ch_SetMotionSpeed - the same run saw 70 calls to that setter in total - so the actor is
+     * handed the bit the engine tests for, the engine does its own arithmetic, and the bit is put
+     * back. Nothing is computed here.
+     *
+     * Actors on the 0x40 path are left alone: the engine never applies sg_rate there, so lending the
+     * bit would change nothing. */
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     private void h_motion_advance(nint actor, int mode)
     {
-        if (actor != 0)
+        uint* flags_ptr = actor == 0 ? null : (uint*)(actor + EngineAddresses.ActorFlagsOffset);
+        bool lent = false;
+
+        if (flags_ptr != null)
         {
-            uint flags = *(uint*)(actor + EngineAddresses.ActorFlagsOffset);
+            uint flags = *flags_ptr;
 
             _motion_calls++;
             _motion_flags_seen |= flags;
 
             if ((flags & MotionFlagAltPath) != 0)    { _motion_alt++;   note_motion_actor("alt",   actor, flags); }
             else if ((flags & MotionFlagRated) != 0) { _motion_rated++; note_motion_actor("rated", actor, flags); }
-            else                                     { _motion_plain++; note_motion_actor("plain", actor, flags); }
+            else
+            {
+                _motion_plain++;
+                note_motion_actor("plain", actor, flags);
+
+                if (_config.MotionAdvanceLendFlag && KeepFps != 0)
+                {
+                    *flags_ptr = flags | MotionFlagRated;
+                    lent = true;
+                    _motion_lent++;
+                }
+            }
         }
 
-        new FhMethodHandle<d_motion_advance>(new FhMethodLocation(EngineAddresses.MotionAdvance, 0))
-            .chain_from(h_motion_advance).fnptr?.Invoke(actor, mode);
+        try
+        {
+            new FhMethodHandle<d_motion_advance>(new FhMethodLocation(EngineAddresses.MotionAdvance, 0))
+                .chain_from(h_motion_advance).fnptr?.Invoke(actor, mode);
+        }
+        finally
+        {
+            // Restored even if the call throws: a bit left set outside this window changes how every
+            // other reader of the flag word sees the actor.
+            if (lent) *flags_ptr &= ~MotionFlagRated;
+        }
     }
 }

@@ -181,15 +181,34 @@ public unsafe sealed partial class Fps60Module
     private long _video_calls;
     private long _video_held;
 
+    /// <summary>
+    ///     Whether a video is actually playing, which is the same test graphicVideoUpdate makes on
+    ///     its first line. Skipping a call while it is false holds nothing - the function returns
+    ///     immediately - but it does consume a step of the carry, so the first real video frame
+    ///     would arrive on an arbitrary phase and the counters would report main loop iterations
+    ///     rather than video frames.
+    /// </summary>
+    private static bool fmv_playing()
+    {
+        nint manager = FhUtil.get_at<nint>(EngineAddresses.FmvPlayerManager);
+        return mapped(manager) && *(byte*)(manager + FmvPlaybackFlagOffset) != 0;
+    }
+
+    private const int FmvPlaybackFlagOffset = 0x6D0;
+
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     private void h_video_update()
     {
+        var original = new FhMethodHandle<d_video_update>(new FhMethodLocation(EngineAddresses.GraphicVideoUpdate, 0))
+            .chain_from(h_video_update);
+
+        if (!fmv_playing()) { original.fnptr!(); return; }
+
         _video_calls++;
 
         if (!advance_this_call(ref _video_carry)) { _video_held++; return; }
 
-        new FhMethodHandle<d_video_update>(new FhMethodLocation(EngineAddresses.GraphicVideoUpdate, 0))
-            .chain_from(h_video_update).fnptr!();
+        original.fnptr!();
     }
 
     /* The engine carries two texture animation formats side by side and picks one per character on

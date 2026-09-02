@@ -233,12 +233,19 @@ public unsafe sealed partial class Fps60Module
         FhUtil.set_at(EngineAddresses.SgVCount2, before2 + scaled);
     }
 
-    /* The engine always passes a fixed 0.033373334, one 30 Hz frame. */
+    /* The engine always passes a fixed 0.033373334, one 30 Hz frame.
+     *
+     * Derived from Scale rather than from the target rate, because this is the one correction whose
+     * denominator is a count of main loop passes rather than of presented frames. updateFFX repeats
+     * the whole Sg_MainLoop body while gElapsedFrameCount_frameSkip is non-zero, and during a
+     * syncdata catch-up each of those passes replays one recorded 30 Hz step. Handing it 1/60 there
+     * runs character motion at half speed. Scale is 1 in that state, so 1/(30*Scale) gives 1/30 for
+     * the catch-up and 1/60 for ordinary play. */
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     private void h_ch_calc_main(float delta)
     {
         new FhMethodHandle<d_ch_calc_main>(new FhMethodLocation(EngineAddresses.ChCalcMain, 0))
-            .chain_from(h_ch_calc_main).fnptr!(1f / TargetFramerate);
+            .chain_from(h_ch_calc_main).fnptr!(1f / (30f * Scale));
     }
 
     /* ATEL call target 0000, the frame-based wait. A wait of one frame is an idle loop rather than a
@@ -262,6 +269,11 @@ public unsafe sealed partial class Fps60Module
     /* Whether all four trailing arguments are durations is not established; PWarp scales all four and
      * the result is reported as correct, so this follows it until something disagrees. */
     private long _camera_acc_calls;
+    private long _motion_speed_calls;
+    private long _motion_speed_scaled;
+
+    private string motion_speed_counts()
+        => $"mspeed={_motion_speed_calls}/{_motion_speed_scaled}";
 
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     private void h_camera_move_acc(uint camera_id, uint mode_non_ref, uint mode_polar, uint a4, uint a5, uint a6, uint a7)
@@ -324,7 +336,12 @@ public unsafe sealed partial class Fps60Module
      * at double speed - which is what put the field NPCs out of step while Tidus was right. */
     private void h_set_motion_speed(nint ptr_actor, ushort speed)
     {
-        if (!engine_corrects_motion(ptr_actor)) speed = scale_down(speed);
+        _motion_speed_calls++;
+
+        // How many motion speeds this module ever sees is the coverage question behind "some
+        // animations are still fast": an actor whose speed is set from loaded data or left at its
+        // default never passes through here, and the advance then runs it at the presented rate.
+        if (!engine_corrects_motion(ptr_actor)) { speed = scale_down(speed); _motion_speed_scaled++; }
 
         new FhMethodHandle<d_set_motion_speed>(new FhMethodLocation(EngineAddresses.ChSetMotionSpeed, 0))
             .chain_from(h_set_motion_speed).fnptr!(ptr_actor, speed);

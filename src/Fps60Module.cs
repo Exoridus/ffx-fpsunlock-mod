@@ -97,6 +97,7 @@ public unsafe sealed partial class Fps60Module : FhModule
         ok &= init_overlay_probe();
         ok &= init_motion_sequence_hooks();
         ok &= init_lens_sprite_hook();
+        
 
         _sync_aware = _config.SyncDataAware;
         _vsync_interval_target = _config.PresentInterval;
@@ -183,8 +184,9 @@ public unsafe sealed partial class Fps60Module : FhModule
                      $"sg_ratef={FhUtil.get_at<float>(EngineAddresses.SgRateF):F3}, " +
                      $"{particle_counts()}, {effect_counts()}, {kernel_counts()}, {motion_counts()}, {survey_counts()}, " +
                      $"{overlay_probe_counts()}, {engine_state_counts()}, " +
-                     $"{motion_sequence_counts()}, {frame_sequence_counts()}, {lens_sprite_counts()}, " +
-                     $"{texture_animation_counts()} cam_acc={_camera_acc_calls}, " +
+                     $"{motion_sequence_counts()}, " +
+                     $"{frame_sequence_counts()}, {lens_sprite_counts()}, " +
+                     $"{texture_animation_counts()} cam_acc={_camera_acc_calls} {motion_speed_counts()}, " +
                      $"{particle_timeline_counts()}");
 
         _frames_at_last_sample = _frames;
