@@ -467,6 +467,23 @@ public sealed record Fps60Config
     /// </summary>
     public bool AtelWorkerTranslation { get; init; } = true;
 
+    /// <summary>
+    ///     Correct the particle spawn cadence of the twenty magic overlays that gate their emission
+    ///     on sg_count, by handing them a counter that advances once per authored 30 Hz step instead
+    ///     of once per presented frame.
+    ///
+    ///     Their gate is <c>sg_count &amp; 3</c> or <c>sg_count &amp; 7</c> around the code that
+    ///     allocates a particle, so one emission every four or every eight frames. At 60 Hz they emit
+    ///     at double density. Nothing else in this module reaches them: all twenty have a stub
+    ///     advance, and the gates sit in draw-side step kernels that neither the effect advance nor
+    ///     the particle kernel hold touches.
+    ///
+    ///     The correction repoints gMagicFunctions slot 764, which is where the overlays get the
+    ///     address from, so no overlay is modified and no other reader of sg_count is affected. It is
+    ///     not a hold: the overlays keep running every frame and only the clock they read is retimed.
+    /// </summary>
+    public bool OverlaySpawnGate { get; init; } = true;
+
     /// <summary>Log measured present rate and frame delta statistics.</summary>
     public bool Telemetry { get; init; } = true;
 

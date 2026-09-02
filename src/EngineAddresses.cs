@@ -463,6 +463,23 @@ public static class EngineAddresses
     public const nint SgCount = 0x1FCBBF0;
 
     /// <summary>
+    ///     Slot 764 of gMagicFunctions (base 0x00C64CE8, so base + 0xBF0), the cell that hands
+    ///     &amp;sg_count to every magic overlay. It holds the address, not the value.
+    ///
+    ///     MagicFile_Start passes the table base to the DLL's InitMagicPRX, which is byte-identical
+    ///     boilerplate in all 581 shipped overlays and copies 32 data slots out of it into DLL-local
+    ///     cells at load time. Twenty overlays then read this one, three sites each, always as
+    ///     <c>test byte ptr [eax], 3</c> or <c>, 7</c> around a particle emission.
+    ///
+    ///     Writable without disturbing anything else: the cell has no reference anywhere in FFX.exe
+    ///     (0 decoded, 0 raw dword occurrences in the whole image) and the table itself has exactly
+    ///     one, the <c>push 0xC64CE8</c> at 0x009DA7FF. FFX.exe's own sg_count readers all address
+    ///     the global directly. The slot carries a base relocation, so at runtime it holds
+    ///     module base + <see cref="SgCount"/> rather than the linked 0x023CBBF0.
+    /// </summary>
+    public const nint MagicFunctionsSgCountSlot = 0x8658D8;
+
+    /// <summary>
     ///     int. The number of Sg_MainLoop passes updateFFX still owes this frame: it repeats its
     ///     whole body while this is non-zero, and Sg_MainLoop consumes one pass per iteration.
     ///

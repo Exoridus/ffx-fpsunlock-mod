@@ -107,6 +107,10 @@ public unsafe sealed partial class Fps60Module : FhModule
         ok &= init_idle_sway_hook();
         ok &= init_neck_tracking_hook();
         ok &= init_atel_worker_motion_hooks();
+
+        // Before the game's own entry point runs, so before any magic overlay can have been loaded
+        // and snapshotted the slot this rewrites.
+        init_overlay_spawn_gate();
         
 
         _sync_aware = _config.SyncDataAware;
@@ -160,6 +164,7 @@ public unsafe sealed partial class Fps60Module : FhModule
         // Both before the engine's update for this frame: the first decides whether this frame
         // advances a held sequence, the second acts on that decision.
         decide_frame_advance();
+        advance_overlay_spawn_clock();
         retime_texture_animation();
         sample_particle_population();
 
@@ -214,7 +219,7 @@ public unsafe sealed partial class Fps60Module : FhModule
                          $"{cross_fade_counts()}, {atel_wait_counts()}, " +
                          $"{particle_timeline_counts()}, {frame_skip_counts()}, {eternal_calm_counts()}, " +
                          $"{idle_sway_counts()}, {neck_counts()}, " +
-                         $"{atel_worker_motion_counts()}");
+                         $"{atel_worker_motion_counts()}, {overlay_spawn_gate_counts()}");
         }
 
         _frames_at_last_sample = _frames;
