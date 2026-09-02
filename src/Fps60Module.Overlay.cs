@@ -22,11 +22,11 @@ public unsafe sealed partial class Fps60Module
 
         if (ImGui.Begin("Fps60 Timer"))
         {
-            // Twice the current font size, current font kept (font size base unscaled 0 would mean
-            // "use the font's own base size" instead), so this reads at a glance across the room.
-            ImGui.PushFont(ImGui.GetFont(), ImGui.GetFontSize() * 2f);
+            // Deliberately drawn at the default font size. Scaling it needs a PushFont overload
+            // that nothing in either repository exercises, and this draws from h_present on every
+            // presented frame - the one call site where an unproven ImGui call costs a crash rather
+            // than a wrong pixel.
             ImGui.Text($"t={ElapsedSeconds:F1}s");
-            ImGui.PopFont();
 
             // Same "u" format and the same UTC source the logger stamps every line with, so a
             // symptom read off this line can be matched to a log line by eye.
