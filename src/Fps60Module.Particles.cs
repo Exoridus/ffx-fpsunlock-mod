@@ -213,6 +213,15 @@ public unsafe sealed partial class Fps60Module
      * that is scaled. */
     private void scale_field_step(nint manager)
     {
+        // The two are alternatives, not layers. _pppStartPart is the entry point both particle
+        // halves share - pppFpLoop restarts a field group through it with a literal 0x1000, the
+        // battle path passes the global step - so h_ppp_start_part has already scaled the +0x10 of
+        // every manager including this one, by the age step's integer divisor rather than by Scale.
+        // Halving it again here advances field managers at a quarter of the authored step: emission
+        // intervals at twice their wall clock length and half the standing population, against an
+        // object age that is correct.
+        if (_config.ParticleTimeline) return;
+
         int* step = (int*)(manager + ParticleStepOffset);
 
         if (*step <= 0) return;

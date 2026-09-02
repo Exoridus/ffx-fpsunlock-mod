@@ -264,6 +264,12 @@ public sealed record Fps60Config
     ///     far. Whether that reaches the motion is the open question - the kernels may advance their
     ///     objects incrementally per call, in which case the accumulator only governs lifetime and
     ///     emission and nothing visible changes.
+    ///
+    ///     Superseded by <see cref="ParticleTimeline"/> rather than complementary to it, and it is
+    ///     ignored while that is on. The start-side hook the timeline correction installs sits on
+    ///     _pppStartPart, which both particle halves share, so every field manager's step is already
+    ///     scaled there. Applying this on top halved the same field twice, which advanced field
+    ///     managers at a quarter of the authored step.
     /// </summary>
     public bool FieldParticleStepScale { get; init; }
 
@@ -511,6 +517,20 @@ public sealed record Fps60Config
     ///     visual defect that leaves no log line of its own be timed against the log by eye.
     /// </summary>
     public bool TimerOverlay { get; init; }
+
+    /// <summary>
+    ///     Log the restart countdown and the two end-condition flags of every live field particle
+    ///     manager, once a second. A diagnostic probe, not a correction: it reads engine memory and
+    ///     writes a log line, and changes nothing about how anything is timed.
+    ///
+    ///     It settles which of the two remaining causes makes field particle groups vanish and pop
+    ///     back in. pppFpLoop decrements a countdown at manager+0x00 once per pass with no time term
+    ///     and skips the group entirely while it is not yet negative, so that duration halves in
+    ///     wall clock at twice the pass rate. The other candidate is pppCheckViewCylinder, which is
+    ///     camera driven and rate independent. A run in which every live manager reads -1 throughout
+    ///     rules out the countdown and leaves the cylinder.
+    /// </summary>
+    public bool FieldManagerProbe { get; init; }
 
     public static Fps60Config Load(string path)
     {
