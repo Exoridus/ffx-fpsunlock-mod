@@ -1,4 +1,4 @@
-namespace Fahrenheit.Mods.Fps60;
+namespace Fahrenheit.Mods.FpsUnlock;
 
 /// <summary>
 ///     Records the original bytes of every in-process patch so shutdown can restore

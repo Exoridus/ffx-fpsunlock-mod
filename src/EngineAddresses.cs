@@ -1,4 +1,4 @@
-namespace Fahrenheit.Mods.Fps60;
+namespace Fahrenheit.Mods.FpsUnlock;
 
 /// <summary>
 ///     Hook targets and globals, as RVAs relative to the FFX.exe image base.
@@ -137,7 +137,7 @@ public static class EngineAddresses
     ///
     ///     It seeds filter slot 0 rather than expressing a duration: the stored step is
     ///     max(1, |alpha - current| / frame_count), so a doubled frame count cannot buy a half step
-    ///     once |delta| drops below it. See Fps60Module.CrossFade.
+    ///     once |delta| drops below it. See FpsUnlockModule.CrossFade.
     /// </summary>
     public const nint SgAccSetAlpha = 0x42BD90;
 
@@ -668,7 +668,7 @@ public static class EngineAddresses
     ///
     ///     The module hooks it as a pass-through, so the value reaches the engine unchanged. The hook
     ///     is kept because it is the only place the writes are visible; the correction the byte can
-    ///     express is the per-slot hold in <see cref="Fps60Config.TextureAnimationStep"/>.
+    ///     express is the per-slot hold in <see cref="FpsUnlockConfig.TextureAnimationStep"/>.
     /// </summary>
     public const nint ChTextureSetAnimTimer = 0x43D070;
 

@@ -29,5 +29,13 @@ if ($Deploy) {
     Copy-Item $ManifestFile.FullName $DeployDir -Force
     $DepsJson = Join-Path $BuildOutput "$ModId.deps.json"
     if (Test-Path $DepsJson) { Copy-Item $DepsJson $DeployDir -Force }
+
+    # Localization: Fahrenheit expects mods/<id>/lang/<module type name>/<locale>.json, and the
+    # settings panel falls back to the raw setting id when a key is missing - so a deploy without
+    # this looks like the labels were never written.
+    $LangDir = Join-Path $ProjectRoot 'lang'
+    if (Test-Path $LangDir) {
+        Copy-Item $LangDir (Join-Path $DeployDir 'lang') -Recurse -Force
+    }
     Write-Host "Deployed: $DeployDir" -ForegroundColor Green
 }

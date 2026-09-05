@@ -1,4 +1,4 @@
-# AI Repository Rules — fahrenheit-fps60-mod
+# AI Repository Rules — fahrenheit-fpsunlock-mod
 
 ## Purpose
 
@@ -17,7 +17,7 @@ are promoted there, not documented only here.
   go through `PatchJournal` so shutdown restores the image.
 - Fahrenheit is the only hook and file-loader owner.
 - No video or game asset is ever committed.
-- Every retiming correction is individually toggleable in `Fps60Config`.
+- Every retiming correction is individually toggleable in `FpsUnlockConfig`.
 
 ## Conventions
 
@@ -26,4 +26,4 @@ are promoted there, not documented only here.
   Fahrenheit's STEP generation exposes most functions only as `FUN_<addr>`
   entries. RVA = Ghidra VA - 0x400000.
 - `FhMethodLocation` is a ref struct; construct it at the use site.
-- One partial per subsystem (`Fps60Module.Present.cs`, `.Atel.cs`, ...).
+- One partial per subsystem (`FpsUnlockModule.Present.cs`, `.Atel.cs`, ...).

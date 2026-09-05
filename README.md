@@ -1,4 +1,4 @@
-# fahrenheit-fps60-mod
+# fahrenheit-fpsunlock-mod
 
 A Fahrenheit module that runs Final Fantasy X HD Remaster at the display refresh
 rate, with every frame-bound engine system retimed, and with true 60 FPS FMVs
@@ -27,8 +27,8 @@ honours the global flag.
 ## Layout
 
 ```
-Fahrenheit.Mods.Fps60.csproj   project; references Fahrenheit core from .workspace/fahrenheit
-fhfps60.manifest.json          Fahrenheit mod manifest
+Fahrenheit.Mods.FpsUnlock.csproj   project; references Fahrenheit core from .workspace/fahrenheit
+fhfpsunlock.manifest.json          Fahrenheit mod manifest
 fahrenheit.release.ref         pinned Fahrenheit commit
 build.ps1                      build, optional -Deploy into the game's mods folder
 tools/bootstrap.ps1            clone and pin Fahrenheit into .workspace/fahrenheit

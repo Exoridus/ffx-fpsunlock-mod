@@ -1,0 +1,606 @@
+namespace Fahrenheit.Mods.FpsUnlock;
+
+/// <summary>
+///     Per-correction toggles. Every retiming hook is individually switchable so a
+///     regression can be bisected without rebuilding, and so a subsystem that is not
+///     yet correct at 60 Hz can be disabled and reported rather than silently
+///     falling back to 30 Hz.
+/// </summary>
+public sealed record FpsUnlockConfig
+{
+    /// <summary>Force the present path off the engine's 30 Hz vsync interval.</summary>
+    public bool Present { get; init; } = true;
+
+    /// <summary>
+    ///     What to write into the engine's frame limiter. 1 is 59.94 Hz, 2 is half of that, and
+    ///     0 removes the limit: the WinMain pump multiplies this value by one frame at 59.94 to get
+    ///     the time it must sleep, so zero means it never sleeps and the game presents as fast as it
+    ///     can.
+    ///
+    ///     Above 60 Hz nothing else in this module has to change. Every correction derives from the
+    ///     measured present rate rather than from a constant, the holds carry a fractional remainder
+    ///     instead of counting whole frames, and the vertical blank correction carries one too - so
+    ///     120 Hz asks for a quarter of a blank per frame and gets 1, 0, 0, 0 rather than a rounded
+    ///     and permanently wrong 1.
+    ///
+    ///     What is not established above 60 Hz is the engine, not the arithmetic: the simulation
+    ///     step, the physics clamp and the overlays have only ever been observed at 30 and 60.
+    /// </summary>
+    public uint PresentInterval { get; init; } = 1;
+
+    /// <summary>
+    ///     Correct for this framerate instead of the measured one. Null measures, which is the right
+    ///     default; set it when the rate is known and the measurement would be disturbed, such as
+    ///     while capturing video or on a machine that cannot hold the target.
+    /// </summary>
+    public double? TargetFramerateOverride { get; init; }
+
+    /// <summary>Suppress engine code that resets the flip vsync interval back to 30 Hz.</summary>
+    public bool KeepVsyncInterval { get; init; } = true;
+
+    /// <summary>Feed the character update a delta derived from the measured present interval.</summary>
+    public bool CharacterDelta { get; init; } = true;
+
+    /// <summary>
+    ///     Scale ATEL frame waits to the active refresh rate. Covers both halves of call target 0000:
+    ///     the frame count the init handler stores, and the movie-frame delta the exec handler
+    ///     subtracts from it while a movie with its own camera is playing.
+    /// </summary>
+    public bool AtelWaits { get; init; } = true;
+
+    /// <summary>Retime camera move durations and accelerations.</summary>
+    public bool Camera { get; init; } = true;
+
+    /// <summary>Retime fade, flash and alpha ramps.</summary>
+    public bool Fades { get; init; } = true;
+
+    /// <summary>
+    ///     Correct the camera cross-fade by holding filter slot 0 instead of scaling the frame count
+    ///     Sg_AccSetAlpha receives.
+    ///
+    ///     Slot 0 is the one filter slot that does not recompute its alpha from a counter and a
+    ///     total. It walks by a step fixed once at max(1, |alpha - current| / frames), and that step
+    ///     is an integer with a floor of 1, so once frames exceeds the alpha delta a doubled frame
+    ///     count buys nothing and the fade runs at twice the speed it should. Across the 425 ramping
+    ///     call sites in the script corpus the delta is always 128, and 61 of them come out wrong in
+    ///     one direction or the other: frames=120 finishes twice too fast, frames=35 takes half again
+    ///     as long as it should.
+    ///
+    ///     Holding the slot emits the engine's own integer sequence at half rate, which is exact in
+    ///     both directions. The two halves are one switch because they only work together: passing
+    ///     the frame count through without the hold leaves every cross-fade twice too fast.
+    /// </summary>
+    public bool CrossFadeHold { get; init; } = true;
+
+    /// <summary>
+    ///     Retime motion and effect speeds.
+    ///
+    ///     Ch_SetMotionSpeed is hooked but passes its argument through. It writes actor+0x750, which
+    ///     nothing resets, so a rate correction applied there outlives the flag state that justified
+    ///     it and the engine then corrects the same actor a second time for the rest of the scene.
+    ///     The motion rate correction lives at the advance instead, under
+    ///     <see cref="MotionAdvanceLendFlag"/>; the hook stays for its call counter and because the
+    ///     reasoning belongs next to the address.
+    /// </summary>
+    public bool Motion { get; init; } = true;
+
+    /// <summary>
+    ///     Correct the motion advance for every actor the engine's own gate excludes, by lending it
+    ///     that gate for the duration of one call.
+    ///
+    ///     The advance multiplies its accumulator step by sg_rate only when the actor carries flag
+    ///     0x100000 and the global KEEP_FPS is asserted. An actor that fails either half takes one
+    ///     whole animation frame per call, which is double wall speed at 60 Hz: a portion played
+    ///     with loops=1 reaches its end in half the authored time, the advance clamps the clip to
+    ///     the last whole frame and clears the running flag, and the actor parks on that pose while
+    ///     the script's wait runs on to its correct length and cuts elsewhere. What that looks like
+    ///     is a limb dropping in a single frame.
+    ///
+    ///     Both halves fail in practice, and the global one is the common case rather than the rare
+    ///     one. Ch_Allocate sets the actor bit on every actor and only ChEvent.setKeepFps clears it,
+    ///     which is why deployed telemetry has never once seen an actor reach the advance without
+    ///     it; the global is cleared by scripts through sgSetKeepFps and stays clear for whole
+    ///     scenes, and telemetry reports it clear for roughly half the sampled play time.
+    ///
+    ///     The module computes nothing here. The actor is handed the bit, the global is handed the
+    ///     value the engine tests for, the engine does its own arithmetic, and both are put back.
+    ///     That matters because sg_rate is already right in situations the module would otherwise
+    ///     have to special-case: it is the presented-rate correction in ordinary play, the recorded
+    ///     PS2 frame time while a scene is paced from syncdata, and exactly 1.0 during a catch-up
+    ///     pass, where an extra simulation pass is meant to be a full 30 Hz step rather than a
+    ///     scaled one.
+    ///
+    ///     Actors on the 0x40 path are left alone: that branch has no sg_rate term at all, so
+    ///     lending changes nothing there.
+    /// </summary>
+    public bool MotionAdvanceLendFlag { get; init; } = true;
+
+    /// <summary>
+    ///     Correct the same actors by skipping the motion advance on frames the module holds,
+    ///     instead of by lending the gate. The alternative to <see cref="MotionAdvanceLendFlag"/>,
+    ///     not an addition to it: where both are on, the hold takes the actor and the lend leaves it
+    ///     alone, because scaling a step that is only taken half as often corrects it twice.
+    ///
+    ///     What the hold buys is exactness for a scene that counts animation frames rather than
+    ///     time. Lending scales the step, so a clip lands on positions the authored 30 Hz sequence
+    ///     never visited; holding reproduces that sequence call for call and writes neither the
+    ///     speed multiplier nor the step.
+    ///
+    ///     What it costs is why it is off. The actor's drawn pose updates at 30 Hz while everything
+    ///     around it updates at 60, which is visible if it moves fast; and the stationary predicate
+    ///     that selects the cheap per-element applier is fed from optpos, which is calculated
+    ///     elsewhere and still runs every frame, so a held actor reads as not moving and becomes
+    ///     eligible for a filtered path worth up to 0.70 degrees of lag per joint.
+    /// </summary>
+    public bool MotionHoldOptedOut { get; init; }
+
+    /// <summary>Retime the battle limit timer.</summary>
+    public bool BattleTimers { get; init; } = true;
+
+    /// <summary>
+    ///     Treat the engine as already correctly paced while it is running from the syncdata table.
+    ///
+    ///     Sg_MainCalcRate takes sg_rate from g_sgSyncRate whenever g_isNeedSync is set, and the
+    ///     catch-up loop then holds the simulation to the PS2 frame times the table records. Every
+    ///     duration this module scales is wrong in that state, because the scene is already playing
+    ///     at its authored rate. Roughly a third of the recorded frames ask for a rate other than
+    ///     nominal, across three cutscenes.
+    /// </summary>
+    public bool SyncDataAware { get; init; } = true;
+
+    /// <summary>
+    ///     Attach the two counters inside the motion path that sg_rate never reaches - the
+    ///     cross-fade length and the sequence VM's wait - and report how often they run.
+    /// </summary>
+    public bool MotionSequenceCounters { get; init; } = true;
+
+    /// <summary>
+    ///     Hold those two counters on skipped frames, so a cross-fade and a scripted wait take the
+    ///     same wall clock time they were authored for. Separate from the counters so the hooks can
+    ///     be measured before they change anything.
+    /// </summary>
+    public bool MotionSequenceHold { get; init; } = true;
+
+    /// <summary>
+    ///     Scale the 90-frame hold the battle entry waits out before the encounter starts. It counts
+    ///     presented frames, so at 60 Hz the transition blur runs 1.5 seconds instead of 3 and the
+    ///     opening camera arrives early - the part of "the intro is too fast" that no camera hook
+    ///     reaches.
+    /// </summary>
+    public bool BattleIntroBlur { get; init; } = true;
+
+    /// <summary>
+    ///     Hold the texture video update. This is the second video path, separate from the FMV
+    ///     player, and it advances once per presented frame with no rate of its own.
+    /// </summary>
+    public bool TextureVideo { get; init; } = true;
+
+    /// <summary>
+    ///     Hold the main menu water animation so its 69 prepared images play at their authored rate.
+    ///     Frame skipping, and therefore 30 Hz inside a 60 Hz game.
+    /// </summary>
+    public bool MenuWater { get; init; } = true;
+
+    /// <summary>
+    ///     Hold the FMV texture update so 29.97 video plays at its authored rate. Frame skipping.
+    ///     Turn this off once the shipped videos are encoded at the target framerate.
+    /// </summary>
+    public bool Fmv { get; init; } = true;
+
+    /// <summary>
+    ///     Hold the old-format character texture animation advance. The two texture animation
+    ///     formats are retimed differently: the new one follows Ch_TextureSetAnimTimer, which the
+    ///     motion retiming already scales, while the old one counts in literal increments and can
+    ///     only be held. 445 of 872 character model directories are on the old path.
+    /// </summary>
+    public bool TextureAnimation { get; init; } = true;
+
+    /// <summary>
+    ///     Halve the particle system's own clock: the age step in the dispatcher and, with it, the
+    ///     time step every manager is started with.
+    ///
+    ///     This is the timeline rather than the motion - when a keyframe fires, when a step loops,
+    ///     when an object dies, when the next one is emitted. It is a rate change in the image, and
+    ///     it cannot miss a keyframe: a tag fires on equality, so every tag that works today is a
+    ///     multiple of the old step and the halved sequence is a strict superset of the old one.
+    ///
+    ///     The two halves belong together. Halving only the age would double the standing population
+    ///     - the same emission rate per frame against twice as many frames of life - and halving only
+    ///     the manager step is what earlier attempts did, which changed nothing visible because the
+    ///     motion is not in it.
+    /// </summary>
+    public bool ParticleTimeline { get; init; } = true;
+
+    /// <summary>
+    ///     Scale the time step every particle manager is started with. Unlike the held systems this
+    ///     is a real retiming: the effect advances half as far per frame and therefore takes the
+    ///     same wall clock time as at 30 Hz, with drawing and lifetime untouched.
+    /// </summary>
+    public bool Particles { get; init; }
+
+    /// <summary>
+    ///     Hold the particle manager pass instead of scaling its time step, skipping it on the
+    ///     frames a 30 Hz sequence would not have advanced.
+    ///
+    ///     An experiment, off by default, and the only lever consistent with what the step
+    ///     scaling measured: pppRunPartStd runs once per call to _pppRunPart, before and
+    ///     independently of the accumulator update, so particle motion follows how often the pass
+    ///     runs rather than how large its step is. At 60 Hz it simply runs twice as often.
+    ///
+    ///     The risk is that the same call builds the draw packet, in which case particles are not
+    ///     drawn on the held frames and flicker. That is what this flag exists to find out.
+    /// </summary>
+    public bool ParticleHold { get; init; }
+
+    /// <summary>
+    ///     Hold the effect advance on skipped frames, leaving the effect draw on every frame.
+    ///
+    ///     MsEffectProcess(0) advances, MsEffectProcess(1) draws, and the engine calls the advance
+    ///     once per presented frame whether or not the frame ran a simulation step. Holding only the
+    ///     advance is the one lever here that cannot flicker, because nothing about drawing changes.
+    /// </summary>
+    public bool EffectHold { get; init; } = true;
+
+    /// <summary>
+    ///     Hold the effect advance in battle too, rather than only where the call is inert.
+    ///
+    ///     The battle exemption existed because the hook itself used to kill the game before the
+    ///     first splash, which was read as the hold being unsurvivable. It was the signature: the
+    ///     generated binding declares MsEffectProcess without parameters while the function reads
+    ///     its mode from the stack, so the detour handed it garbage. With a cdecl one-argument
+    ///     delegate the hook is ordinary, and the hold is what it was meant to be.
+    ///
+    ///     What to expect: of 581 overlays, 224 have a stub advance (33 C0 C3) and the hold is a
+    ///     precise no-op for them - those effects are driven by character motion instead. Of the
+    ///     357 with a real advance, about 117 read Sg_GetCurExecFrames inside their draw, so their
+    ///     timeline is partly on the other side and a held advance leaves them internally
+    ///     inconsistent rather than merely slower. Look for effects that look wrong, not for
+    ///     effects that are still fast.
+    /// </summary>
+    public bool EffectHoldInBattle { get; init; } = true;
+
+    /// <summary>
+    ///     Hold the eternal effect set's second object list along with the first.
+    ///
+    ///     Its two entry points are not an advance and a draw: both run the same worker over a
+    ///     different object list, and both decrement the per-channel wait bytes that are the set's
+    ///     only clock. Holding the mode 0 call alone therefore retimes half its population. Off by
+    ///     default because the opcode handlers behind that worker are unread, so "a hold is safe"
+    ///     is probable rather than established.
+    /// </summary>
+    public bool EternalEffectHold { get; init; }
+
+    /// <summary>
+    ///     Attach the MsEffectProcess hook and count advance and draw calls without holding
+    ///     anything. Separates the two failure modes: a hook that the game cannot survive at all,
+    ///     and a hold the overlay's state machine cannot survive.
+    /// </summary>
+    public bool EffectProbe { get; init; }
+
+    /// <summary>
+    ///     Hold the field particle advance on skipped frames. This is the half a cutscene uses:
+    ///     yiCallFieldParticle calls pppFpLoop, which advances each group through _pppRunPartFp.
+    ///
+    ///     Whether it flickers is the question it exists to answer. The packet counter pppFpLoop
+    ///     checks after its loop grows inside the advance, so the draw may well be built there too,
+    ///     in which case held frames draw nothing.
+    /// </summary>
+    public bool FieldParticleHold { get; init; }
+
+    /// <summary>
+    ///     Halve the time step of every field particle manager as it is advanced, instead of
+    ///     skipping the advance.
+    ///
+    ///     The alternative to the hold, and the only one that cannot flicker: the pass still runs
+    ///     every frame and still builds its draw packet, but the manager's accumulator moves half as
+    ///     far. Whether that reaches the motion is the open question - the kernels may advance their
+    ///     objects incrementally per call, in which case the accumulator only governs lifetime and
+    ///     emission and nothing visible changes.
+    ///
+    ///     Superseded by <see cref="ParticleTimeline"/> rather than complementary to it, and it is
+    ///     ignored while that is on. The start-side hook the timeline correction installs sits on
+    ///     _pppStartPart, which both particle halves share, so every field manager's step is already
+    ///     scaled there. Applying this on top halved the same field twice, which advanced field
+    ///     managers at a quarter of the authored step.
+    /// </summary>
+    public bool FieldParticleStepScale { get; init; }
+
+    /// <summary>
+    ///     Hold the field particle group restart countdown on skipped frames, so a group's absence
+    ///     and its restart land at the wall time they were authored for.
+    ///
+    ///     pppFpLoop decrements a counter at each manager's +0x00 once per pass with no time term,
+    ///     then tests the result. While the result is still zero or above the group is skipped
+    ///     outright, drawing nothing; at -1 every object is freed and the group is started again in
+    ///     the same pass as the decrement. At 60 Hz that absence lasts half as long as it should and
+    ///     the restart arrives twice as early, which is field particles vanishing and popping back in.
+    ///
+    ///     It is not a hold on the call. The draw packet is built inside the same pass as the
+    ///     advance, so skipping any part of pppFpLoop would drop a group's contribution to the frame;
+    ///     what is held is the counter, by adding one back before the engine's own decrement and
+    ///     taking it off again for any group the engine turned out not to step.
+    /// </summary>
+    public bool FieldParticleRestartHold { get; init; } = true;
+
+    /// <summary>
+    ///     Hold the particle step kernels that move an object, leaving the ones that draw it alone.
+    ///
+    ///     This is the retiming the particle system's own structure allows: a program step carries a
+    ///     separate update and draw entry point, and only the update advances anything. Holding the
+    ///     update on skipped frames halves the motion while every frame still draws.
+    /// </summary>
+    public bool ParticleKernelHold { get; init; } = true;
+
+    /// <summary>
+    ///     Force the event worker's animation curves onto the vertical blank clock.
+    ///
+    ///     yiAnimInfo_init copies KEEP_FPS into the mode global once, and the worker then reads
+    ///     either yiGetVCount, which this module rescales, or yiGetFCount, which is sg_count * 2.
+    ///
+    ///     This is not a choice between two equivalent clocks. sg_count is incremented once per
+    ///     Sg_MainLoop pass, so it runs at the presented rate, and it cannot be rescaled: six
+    ///     consumers select a GS double buffer off its parity. The yiGetFCount branch is therefore
+    ///     twice too fast at 60 Hz with no way to correct it in place, while the vblank branch is
+    ///     delta-measured and correct. The worker divides a difference of two samples by a duration
+    ///     held in the animation record, both in counter units, so curve progress is directly
+    ///     proportional to the counter rate and nothing downstream absorbs the factor.
+    ///
+    ///     Forcing the mode is safe by construction: yiAnimInfo_init zeroes the start and now
+    ///     stamps of all 64 tracks before this module writes the mode, so no track can end up with
+    ///     its two timestamps taken from different clocks.
+    ///
+    ///     One documented behaviour change: below the target rate, forced vblank curves keep
+    ///     running on wall clock instead of slowing with the rendered frames. That is what every
+    ///     battle and the ~20 scenes calling sgSetKeepFps(1|2) already do.
+    /// </summary>
+    public bool EventClockOnVblank { get; init; } = true;
+
+    /// <summary>
+    ///     Count how the per-actor motion advance classifies the actors a scene runs, without
+    ///     changing anything.
+    ///
+    ///     Its rate correction is gated on the actor's flag 0x100000 and on the global KEEP_FPS.
+    ///     Ch_Allocate sets the actor flag on every actor and only ChEvent.setKeepFps clears it, so
+    ///     the counters separate the actors a cutscene script opted out from the rest, and name
+    ///     them. An earlier reading held that nothing in the executable set the bit; the write is an
+    ///     XOR mask rather than an OR, which is why an enumeration of OR and TEST operations missed
+    ///     it.
+    /// </summary>
+    public bool MotionSurvey { get; init; }
+
+    /// <summary>
+    ///     Hold only these step kernels, by name. Empty means all of them.
+    ///
+    ///     Not every update is only motion. A kernel that initialises what it just spawned, or that
+    ///     maintains geometry a draw kernel then reads, misbehaves when it is skipped rather than
+    ///     merely running at half rate - which is why the set is narrowed from a config file
+    ///     instead of a rebuild.
+    /// </summary>
+    public string[] ParticleKernelOnly { get; init; } = [];
+
+    /// <summary>Leave these step kernels running at full rate, by name.</summary>
+    public string[] ParticleKernelExcept { get; init; } = [];
+
+    /// <summary>
+    ///     Overwrite the hardcoded 29.97 the video update loop multiplies its time step by
+    ///     (a double in .rdata at 0x74A180). Null leaves it alone.
+    ///
+    ///     Leave this alone. It is not the playback clock and setting it does active harm.
+    ///
+    ///     The player's milliseconds per picture come from the container through a different
+    ///     constant entirely; this one has exactly three readers and all of them convert a
+    ///     millisecond position into the progress index that ATEL sees. Scripts compare that index
+    ///     against hard thresholds - the intro waits for it to reach 4720 - so doubling this value
+    ///     halves every such threshold and cuts each video off halfway through.
+    /// </summary>
+    public double? VideoTargetFramerate { get; init; }
+
+    /// <summary>
+    ///     Count calls to the texture animation candidates and report them in the telemetry line.
+    ///     Changes no behaviour; it identifies which function is on the live path.
+    /// </summary>
+    public bool SurveyTextureAnimation { get; init; } = true;
+
+    /// <summary>
+    ///     Move the battle command window's multi-target cursor blink to a higher bit of sg_count, so
+    ///     it blinks at the authored 15 Hz instead of at half the presented rate.
+    ///
+    ///     sg_count itself cannot be rescaled - six of its readers pick a GS double buffer off its
+    ///     parity - so the correction is a one-byte change to the mask in the one instruction that
+    ///     reads it as a blink. A higher bit of a counter is still a fifty percent square wave, so
+    ///     the on-time is preserved along with the period.
+    /// </summary>
+    public bool BattleCursorBlink { get; init; } = true;
+
+    /// <summary>
+    ///     Raise the star pass threshold of the dream and recall overlay, so its star field is
+    ///     redrawn at the authored 10 Hz instead of at a third of the presented rate.
+    ///
+    ///     The stars are drawn on one call in three and not at all on the other two, so raising the
+    ///     threshold restores the cadence but shortens the on-time in proportion: at 60 Hz the pass
+    ///     lands every sixth frame and lasts one frame instead of every third and lasting one. The
+    ///     alternative, holding graphicDrawDream itself, would alternate the full star field with the
+    ///     single cached quad its replay path draws, which is a visible flicker.
+    /// </summary>
+    public bool DreamOverlayStars { get; init; } = true;
+
+    /// <summary>
+    ///     Scale the sprite frame clock of the lens and flare family, which advances a fixed step per
+    ///     drawn frame and is therefore the rhythm of a flare or a background flash. Unlike every
+    ///     other particle correction this is a true scale: no sprite frame is dropped, because the
+    ///     accumulator carries its remainder.
+    /// </summary>
+    public bool LensSpriteClock { get; init; } = true;
+
+    /// <summary>
+    ///     Hold the new texture animation format's step byte on skipped frames, which is what an
+    ///     animated weapon texture runs on. The byte is signed and its engine values are 1 and 0, so
+    ///     a half step cannot be written; parking it at 0 and restoring the engine's own value is
+    ///     the correction the format allows.
+    /// </summary>
+    public bool TextureAnimationStep { get; init; } = true;
+
+    /// <summary>
+    ///     Log the first calls to MsCameraMoveAcc with all seven arguments. The battle entry camera
+    ///     is an ATEL script that calls camMoveAcc(0, 0, 30, 15) in 540 of 641 encounter scripts, so
+    ///     the logged arguments say directly whether the scaling reached it.
+    /// </summary>
+    public bool SurveyCamera { get; init; } = true;
+
+    /// <summary>
+    ///     Correct the Eternal Calm copyright card, which Sg_MainLoop advances once per pass: its
+    ///     alpha ramp and the 0x130 frame counter that ends the sequence both run at the presented
+    ///     rate, so at 60 Hz the card fades in twice too fast and disappears after 5 seconds rather
+    ///     than 10.
+    ///
+    ///     The correction is a half-rate detour rather than a hold, because skipping the call would
+    ///     leave the frame with no card drawn at all.
+    /// </summary>
+    public bool EternalCalmCard { get; init; } = true;
+
+    /// <summary>
+    ///     Correct the idle look-around every standing actor runs. Its dwell and its step are both
+    ///     counted in calls and nothing in the engine scales them, so at 60 Hz a character turns its
+    ///     head twice as fast and twice as often as it was authored to.
+    ///
+    ///     The correction suppresses the advance on skipped frames rather than skipping the call:
+    ///     the call also rebuilds the rotation of the optpos element the following pass consumes,
+    ///     and a frame without it is a frame with that rotation unwritten.
+    /// </summary>
+    public bool IdleSway { get; init; } = true;
+
+    /// <summary>
+    ///     Correct the head and neck tracking every actor runs while something has its attention.
+    ///     Its weight ramp, its yaw blend and its slerp fade all step once per call and nothing in
+    ///     the engine scales them, so at 60 Hz a character snaps its head onto a target in half the
+    ///     authored time and the blend out of a changed target is over twice as fast.
+    ///
+    ///     The correction holds the three clocks on skipped frames rather than skipping the call:
+    ///     the call is what writes the replace matrix and the weight of optpos element 9, and the
+    ///     same worker pass consumes them a few instructions later.
+    /// </summary>
+    public bool NeckTracking { get; init; } = true;
+
+    /// <summary>
+    ///     Correct the vertical channel of a swimming actor: the buoyancy that lifts it towards the
+    ///     surface, the gravity that pulls it back, the velocity clamp, and the smoothed foot offset
+    ///     the ground clamp is measured against. Five rates, all a step per call, none of them
+    ///     reading the delta Ch_CalcMain is handed - so at 60 Hz a swimmer bobs, sinks and settles
+    ///     twice as fast as it was authored to.
+    ///
+    ///     The correction holds the three fields on skipped frames rather than converting the rates.
+    ///     Two of the five are accelerations and one is a velocity, so a conversion would scale one
+    ///     group by the framerate factor and the other by its square, and three of the five sit on
+    ///     .rdata constants shared with the rest of the executable. The hold picks no constant.
+    ///
+    ///     Gravity mode 2 is reachable only from the ATEL opcode setGravityMode - 129 sites in 29
+    ///     event scripts, none in any battle or monster script - so this only ever fires in field
+    ///     swimming, and the telemetry counter reads zero for almost all of a playthrough.
+    /// </summary>
+    public bool Buoyancy { get; init; } = true;
+
+    /// <summary>
+    ///     Correct the ATEL worker's own motion and rotation records, which drive every event
+    ///     character, the field camera and every attached map object.
+    ///
+    ///     Each ATEL worker carries nine move records and nine rotation records, one per thread
+    ///     priority, and two readers step them once per presented frame. Everything in them is
+    ///     counted in calls: a yaw and a pitch turn step in radians, four rotation rates, a float
+    ///     interpolation accumulator that advances by one, and two watchdog deadlines the readers
+    ///     compare their own per-call counter against. Nothing in the engine scales any of it, so at
+    ///     60 Hz an event character turns twice as fast and a scripted rotation finishes in half the
+    ///     authored time while the wait that follows it now runs twice as long.
+    ///
+    ///     The rates are divided at their setters, which are leaf functions with one caller each.
+    ///     The deadlines are multiplied at theirs. The accumulator cannot be corrected at a setter -
+    ///     startMotion and startRotation overwrite the duration with its reciprocal for half the
+    ///     types, and move type 7 takes its step from the FMV decoder while a movie with its own
+    ///     camera is playing - so it is corrected at the increment instead, by a pair around the two
+    ///     readers that rewrites the accumulator by the delta the reader just produced.
+    /// </summary>
+    public bool AtelWorkerMotion { get; init; } = true;
+
+    /// <summary>
+    ///     Correct the position integrator of the ATEL workers that are not bound to a Ch
+    ///     character: the field and event camera, and every map group or map part a script
+    ///     attaches. It adds the worker's speed along its facing to its position once per call with
+    ///     no delta time at all, so at 60 Hz all of them travel twice as fast.
+    ///
+    ///     Separate from <see cref="AtelWorkerMotion"/> even though it belongs to the same records,
+    ///     because it is the largest visible change of the four and the only one that moves the
+    ///     camera itself. Bisecting it should not mean turning off eleven corrections that are not
+    ///     in question.
+    ///
+    ///     The correction scales the speed the integrator reads and puts it back afterwards rather
+    ///     than scaling the setter that wrote it. The setter is the wrong lever twice over: the
+    ///     same field feeds Ch_SetSp for the 5,509 loadModel workers whose motion Ch_CalcMain
+    ///     already integrates against a corrected delta, and the speed the integrator actually uses
+    ///     is recomputed every call as a proportional approach or an accelerated ramp rather than
+    ///     being the stored value at all.
+    /// </summary>
+    public bool AtelWorkerTranslation { get; init; } = true;
+
+    /// <summary>
+    ///     Correct the particle spawn cadence of the twenty magic overlays that gate their emission
+    ///     on sg_count, by handing them a counter that advances once per authored 30 Hz step instead
+    ///     of once per presented frame.
+    ///
+    ///     Their gate is <c>sg_count &amp; 3</c> or <c>sg_count &amp; 7</c> around the code that
+    ///     allocates a particle, so one emission every four or every eight frames. At 60 Hz they emit
+    ///     at double density. Nothing else in this module reaches them: all twenty have a stub
+    ///     advance, and the gates sit in draw-side step kernels that neither the effect advance nor
+    ///     the particle kernel hold touches.
+    ///
+    ///     The correction repoints gMagicFunctions slot 764, which is where the overlays get the
+    ///     address from, so no overlay is modified and no other reader of sg_count is affected. It is
+    ///     not a hold: the overlays keep running every frame and only the clock they read is retimed.
+    /// </summary>
+    public bool OverlaySpawnGate { get; init; } = true;
+
+    /// <summary>Log measured present rate and frame delta statistics.</summary>
+    public bool Telemetry { get; init; } = true;
+
+    /// <summary>
+    ///     Draws an on-screen clock, matching the log's own timestamp format, plus a compact
+    ///     counter view. A diagnostic aid for play-testing, not a gameplay feature: it lets a
+    ///     visual defect that leaves no log line of its own be timed against the log by eye.
+    /// </summary>
+    public bool TimerOverlay { get; init; }
+
+    /// <summary>
+    ///     Log the restart countdown and the two end-condition flags of every live field particle
+    ///     manager, once a second. A diagnostic probe, not a correction: it reads engine memory and
+    ///     writes a log line, and changes nothing about how anything is timed.
+    ///
+    ///     It settles which of the two remaining causes makes field particle groups vanish and pop
+    ///     back in. pppFpLoop decrements a countdown at manager+0x00 once per pass with no time term
+    ///     and skips the group entirely while it is not yet negative, so that duration halves in
+    ///     wall clock at twice the pass rate. The other candidate is pppCheckViewCylinder, which is
+    ///     camera driven and rate independent. A run in which every live manager reads -1 throughout
+    ///     rules out the countdown and leaves the cylinder.
+    /// </summary>
+    public bool FieldManagerProbe { get; init; }
+
+    public static FpsUnlockConfig Load(string path)
+    {
+        if (!File.Exists(path)) return new FpsUnlockConfig();
+        return JsonSerializer.Deserialize<FpsUnlockConfig>(File.ReadAllText(path)) ?? new FpsUnlockConfig();
+    }
+
+    /// <summary>
+    ///     Where the config actually sits, which is beside this assembly in the mod's own
+    ///     directory. AppContext.BaseDirectory is the host's bin directory, not the mod's, so a
+    ///     config written next to the DLL was silently never read and every run took the defaults.
+    /// </summary>
+    public static string ResolvePath()
+    {
+        var assembly = typeof(FpsUnlockConfig).Assembly.Location;
+
+        if (!string.IsNullOrEmpty(assembly) && Path.GetDirectoryName(assembly) is { Length: > 0 } dir)
+            return Path.Combine(dir, FileName);
+
+        return Path.Combine(AppContext.BaseDirectory, FileName);
+    }
+
+    public const string FileName = "fhfpsunlock.config.json";
+}
