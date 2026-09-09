@@ -1,0 +1,30 @@
+name: Setup build environment
+description: >-
+  Shared toolchain setup for CI and Release, so a green CI run exercises the
+  same environment the release build gets. Only the .NET SDK is needed: the mod
+  references Fahrenheit's managed core project, and vcpkg/MSBuild are required
+  solely by the native stage0/stage1 loaders, which this repository never builds.
+
+inputs:
+  dotnet-version:
+    description: .NET SDK version to install.
+    required: false
+    default: "10.0.x"
+
+runs:
+  using: composite
+  steps:
+    - name: Setup .NET SDK
+      uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5
+      with:
+        dotnet-version: ${{ inputs.dotnet-version }}
+
+    # The Fahrenheit checkout does not exist yet when this action runs, so its
+    # package references enter the key through the pinned commit instead of
+    # through a csproj glob.
+    - name: Cache NuGet packages
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: ~/.nuget/packages
+        key: nuget-${{ runner.os }}-${{ hashFiles('*.csproj', 'global.json', 'fahrenheit.release.ref') }}
+        restore-keys: nuget-${{ runner.os }}-
