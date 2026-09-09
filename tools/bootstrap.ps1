@@ -12,7 +12,7 @@ if ((Test-Path $Dest) -and -not $Force) {
 } else {
     if (Test-Path $Dest) { Remove-Item -Recurse -Force $Dest }
     New-Item -ItemType Directory -Force -Path (Split-Path $Dest) | Out-Null
-    & git clone https://github.com/Fahrenheit-Modding/Fahrenheit.git $Dest
+    & git clone https://github.com/fahrenheit-crew/fahrenheit.git $Dest
     if ($LASTEXITCODE -ne 0) { throw "git clone failed with exit $LASTEXITCODE" }
 }
 

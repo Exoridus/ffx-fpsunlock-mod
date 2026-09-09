@@ -22,7 +22,7 @@ No interpolated FMVs, extracted assets or replacement game files are included. D
 ## Requirements
 
 - Windows and a legitimate installation of Final Fantasy X HD Remaster.
-- [Fahrenheit](https://github.com/Fahrenheit-Modding/Fahrenheit), compatible with the revision pinned in `fahrenheit.release.ref`.
+- [Fahrenheit](https://github.com/fahrenheit-crew/fahrenheit), compatible with the revision pinned in `fahrenheit.release.ref`.
 - The mod is a Windows x86 managed plugin, not a standalone executable. Fahrenheit provides its runtime and loader dependencies.
 
 ## Installation
