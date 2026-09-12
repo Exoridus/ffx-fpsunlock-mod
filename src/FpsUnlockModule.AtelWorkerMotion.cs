@@ -142,6 +142,17 @@ public unsafe sealed partial class FpsUnlockModule
     private long _atel_integrator_scaled;
 
     /// <summary>
+    ///     Why the integrator declined a worker, and with which bind kind and script type.
+    ///
+    ///     The scaled counter read zero through an entire blitzball match while the buoyancy hold was
+    ///     holding every second pass, so the stadium's objects fall in one of the integrator's three
+    ///     pass-through cases and nothing said which. Without that the fix is a guess: bind kind and
+    ///     script type are the two fields the decision is made on, so they are what gets counted.
+    /// </summary>
+    private readonly Dictionary<(int Kind, int Type), long> _atel_declined = [];
+    private long _atel_declined_header_null;
+
+    /// <summary>
     ///     Rate setter calls, deadline setter calls, reader calls, accumulator rewrites and the
     ///     reader calls whose accumulator was left to the movie clock; then integrator calls and
     ///     the ones whose speed was scaled. A group that installs but never fires reads as zero
@@ -149,7 +160,24 @@ public unsafe sealed partial class FpsUnlockModule
     /// </summary>
     private string atel_worker_motion_counts()
         => $"atelwrk={_atel_rate_sets}/{_atel_deadline_sets}/{_atel_reads}/{_atel_progress_rewrites}/" +
-           $"{_atel_movie_progress} atelpos={_atel_integrator_calls}/{_atel_integrator_scaled}";
+           $"{_atel_movie_progress} atelpos={_atel_integrator_calls}/{_atel_integrator_scaled}" +
+           atel_declined_counts();
+
+    /// <summary>
+    ///     The pass-through census, as kind:type=count pairs ordered so two runs print alike. Empty
+    ///     while every worker the integrator sees is one it corrects.
+    /// </summary>
+    private string atel_declined_counts()
+    {
+        if (_atel_declined.Count == 0 && _atel_declined_header_null == 0) return string.Empty;
+
+        var pairs = _atel_declined
+            .OrderBy(e => e.Key.Kind).ThenBy(e => e.Key.Type)
+            .Select(e => $"k{e.Key.Kind}t{e.Key.Type}={e.Value}");
+
+        return $" atelskip=[{string.Join(' ', pairs)}" +
+               (_atel_declined_header_null != 0 ? $" hdr0={_atel_declined_header_null}" : "") + "]";
+    }
 
     /// <summary>
     ///     A watchdog deadline at the corrected rate. It is stored sixteen bits wide and both
@@ -431,6 +459,8 @@ public unsafe sealed partial class FpsUnlockModule
 
         if (kind is < 2 or > 5 || header == 0)
         {
+            if (header == 0) _atel_declined_header_null++;
+            else             note_declined(kind, *(byte*)header);
             original.fnptr!(worker, thread);
             return;
         }
@@ -442,6 +472,7 @@ public unsafe sealed partial class FpsUnlockModule
 
         if (transform == 0)
         {
+            note_declined(kind, script_type);
             original.fnptr!(worker, thread);
             return;
         }
@@ -454,5 +485,13 @@ public unsafe sealed partial class FpsUnlockModule
         *speed = saved;
 
         _atel_integrator_scaled++;
+    }
+
+    /* Counted rather than logged. A pass-through happens per worker per frame, so a log line would
+     * be tens of thousands of lines a minute; the census answers the same question in one field. */
+    private void note_declined(int kind, int script_type)
+    {
+        var key = (kind, script_type);
+        _atel_declined[key] = _atel_declined.TryGetValue(key, out long n) ? n + 1 : 1;
     }
 }

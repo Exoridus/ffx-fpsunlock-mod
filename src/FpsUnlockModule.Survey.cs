@@ -13,7 +13,17 @@ public unsafe sealed partial class FpsUnlockModule
     private long _texanim_draw;
     private long  _screen_texanim_draw;
     private long  _screen_texanim_changes;
-    private ulong _screen_texanim_id;
+
+    /// <summary>
+    ///     Last animation id per drawn slot, not one global last id.
+    ///
+    ///     The global version counted a change on almost every call and that meant nothing: the
+    ///     stadium draws about four screen animations per frame, so consecutive calls name different
+    ///     animations and a single shared "last id" flips every time. Keyed per slot the counter
+    ///     answers the question it was built for - how often one animation advances - and the
+    ///     interesting ratio is changes against calls per slot rather than in total.
+    /// </summary>
+    private readonly Dictionary<(int Table, int Bank, int Index), ulong> _screen_texanim_ids = [];
     private long _uv_scroll;
     private long _texanim_set_enable;
     /// <summary>
@@ -53,7 +63,7 @@ public unsafe sealed partial class FpsUnlockModule
 
     private string survey_counts()
         => $"texanim_draw={_texanim_draw} screen_texanim={_screen_texanim_draw} " +
-           $"sta_changes={_screen_texanim_changes} " +
+           $"sta_changes={_screen_texanim_changes} sta_slots={_screen_texanim_ids.Count} " +
            $"uv_scroll={_uv_scroll} texanim_enable={_texanim_set_enable} " +
            $"advance_old={_texanim_advance_old_path}";
 
@@ -126,11 +136,11 @@ public unsafe sealed partial class FpsUnlockModule
 
         ulong id = ((ulong)(*(uint*)((nint)entry + 0x24)) << 32) | *(uint*)((nint)entry + 0x34);
 
-        if (id != _screen_texanim_id)
-        {
-            _screen_texanim_id = id;
-            _screen_texanim_changes++;
-        }
+        var key = (table, bank, index);
+        if (_screen_texanim_ids.TryGetValue(key, out ulong last) && last == id) return;
+
+        _screen_texanim_ids[key] = id;
+        _screen_texanim_changes++;
     }
 
     [UnmanagedCallConv(CallConvs = [typeof(CallConvStdcall)])]
