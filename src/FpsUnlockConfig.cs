@@ -594,21 +594,68 @@ public sealed record FpsUnlockConfig
     public bool AtelWorkerMotion { get; init; } = true;
 
     /// <summary>
-    ///     Divide the script's per-call gravity by the scale, so a thrown object keeps its authored
-    ///     arc instead of accelerating twice as fast.
+    ///     Divide the script's per-call acceleration at move+0x34 by the scale. <b>Off by default,
+    ///     and the reason is a measurement rather than caution.</b>
     ///
-    ///     setGravity [0094h] writes move+0x34 and the move reader adds it to the velocity once per
-    ///     call with no delta term, which puts it in the same class as the twelve turning rates this
-    ///     module already divides - it was simply not in that list. Halving it is exact rather than
-    ///     approximate in both places the field is read: the increment keeps the velocity curve
-    ///     against wall time, and the brake sqrt(2 g d) is the same curve's energy form, so the two
-    ///     stay consistent. The speed cap at move+0x10 must not be scaled and is not.
+    ///     setGravity [0094h] writes the field and the move reader reads it in exactly two places:
+    ///     as the increment in <c>v += a</c>, and as the brake ceiling in <c>sqrt(2 a d)</c>. Those
+    ///     two want different exponents and no single factor satisfies both. The stored velocity
+    ///     keeps its 30 Hz magnitude - the integrator divides it at the point of use - so the
+    ///     increment needs <c>a/scale</c> to take twice as many calls to reach the same velocity,
+    ///     while the brake ceiling is a velocity at a given distance and must stay at <c>a</c>
+    ///     unchanged. Dividing satisfies the first and multiplies the second by <c>1/sqrt(scale)</c>,
+    ///     which makes the final approach to a destination about 29 percent slow at 60 Hz.
     ///
-    ///     Its own switch rather than part of AtelWorkerMotion because it is the one member of that
-    ///     class that moves an object through space rather than turning it, so it is the one whose
-    ///     effect has to be separable from the rest.
+    ///     Both errors are sub-frame against the shipped scripts, which is why this is off rather
+    ///     than reshaped. 84 call sites in 18 event scripts, and the authored acceleration is at or
+    ///     above the movement speed in nearly every pairing (g=20 against speeds of 10 to 17 in the
+    ///     Luca scripts, g=70 against 34), so the increment saturates the speed cap within one call
+    ///     and the braking phase lasts under one 30 Hz frame. Only 67 of 12,289 move starts use a
+    ///     type that reads the field at all.
+    ///
+    ///     It reaches no thrown blitzball. The blitzball corpus starts 723 move type 2 and four type
+    ///     1, and neither type reads this field; its five setGravity(10) calls arm a record nothing
+    ///     then looks at, and the arc comes from the Ch gravity mode instead. See
+    ///     finding:atel-move-accel-is-read-by-three-move-types.
     /// </summary>
-    public bool AtelWorkerGravity { get; init; } = true;
+    public bool AtelWorkerGravity { get; init; }
+
+    /// <summary>
+    ///     Divide the three per-call facing turn rates every character uses, so an actor turns into
+    ///     its walk instead of snapping round and then setting off.
+    ///
+    ///     Ch_CalcMain's two loop-1 motion controllers step the facing at Chr+0x158 towards its
+    ///     target by one of three constants chosen by the actor's speed - 18 degrees per call
+    ///     standing, 20 walking, 30 running - and neither reads the delta the rest of loop 1 is
+    ///     handed. At 60 Hz that is 1080, 1200 and 1800 degrees per second against an authored 540,
+    ///     600 and 900, while the translation the same loop performs is delta-corrected and still
+    ///     takes the authored time.
+    ///
+    ///     Applied as an operand rewrite at the six instruction sites rather than as a hook or as a
+    ///     write to the literal pool: one of the three constants has a third reader elsewhere in the
+    ///     image, and the step helper the constant is an argument to has a third caller in
+    ///     Ch_CalcElement that is a different quantity. Divided rather than held - holding the facing
+    ///     would freeze turning on every second frame while translation kept running, which is why
+    ///     the buoyancy hold leaves the same field alone.
+    /// </summary>
+    public bool ChFacingTurnRate { get; init; } = true;
+
+    /// <summary>
+    ///     Stretch the frame count of every character fade, tint and transparency ramp, so a
+    ///     blackout, dissolve or actor light change takes the time it was authored for.
+    ///
+    ///     Each actor carries seven <c>{current, target, frames}</c> records at Chr+0x330 and
+    ///     Ch_CalcMain steps all seven once per presented frame with no time term:
+    ///     <c>current += (target - current) / frames; frames--</c>. At 60 Hz every one of them
+    ///     finishes in half its authored wall clock.
+    ///
+    ///     Corrected by multiplying the count at the single arm helper all seven setters funnel
+    ///     into. That is exact rather than approximate, because the step divides by the count that
+    ///     is left rather than the count it started with, so a doubled count is a doubled duration
+    ///     and nothing else changes. A count of zero is the helper's instant assignment and is
+    ///     passed through untouched.
+    /// </summary>
+    public bool ChShadeRamps { get; init; } = true;
 
     /// <summary>
     ///     Scale move type 9's ten-pass lead-in, the wind-up an object waits out before it starts

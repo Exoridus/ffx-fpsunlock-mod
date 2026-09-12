@@ -114,6 +114,37 @@ public static class EngineAddresses
     public const nint ChSetMotionSpeed = 0x42B400;
 
     /// <summary>
+    ///     The walk motion controller, the first of Ch_CalcMain's two loop-1 controllers. Selects one
+    ///     of three per-call facing rates by the actor's speed and steps Chr+0x158 towards Chr+0x168
+    ///     by it; the rest of the function picks the motion or sequence to play.
+    ///
+    ///     Not hooked. The three rate loads inside it are patched at their operands; see
+    ///     FpsUnlockModule.ChFacing.cs for why neither the function nor the literal pool is the right
+    ///     place.
+    /// </summary>
+    public const nint ChWalkMotionController = 0x435C30;
+
+    /// <summary>
+    ///     The swim motion controller, the second one. Carries the same three-way facing selection
+    ///     with the same three constants, and additionally the 0.15 per call stroke impulse on
+    ///     Chr+0x504 that the buoyancy hold already brackets.
+    /// </summary>
+    public const nint ChSwimMotionController = 0x435DB0;
+
+    /// <summary>
+    ///     The arm for all seven of an actor's <c>{current, target, frames}</c> ramp records at
+    ///     Chr+0x330, stride 0xc: <c>void(float* record, float target, int frames)</c>. Writes the
+    ///     target and the count, and assigns the target outright when the count is zero. Measured
+    ///     cdecl.
+    ///
+    ///     Its seven call sites are Ch_SetShadeCol (three, one per colour channel), Ch_SetTransparent,
+    ///     Ch_SetShade, Ch_SetShadeID and Ch_SetSpecularAlpha, so it is the whole arm surface of the
+    ///     character fade system. The stepper is FUN_008360a0, called seven times per actor per
+    ///     presented frame from Ch_CalcMain.
+    /// </summary>
+    public const nint ChSetRampTarget = 0x42BA10;
+
+    /// <summary>
     ///     Unnamed motion parameter setter: (chr_id, stat_id, float value). stat ids 0x03..0x06 are
     ///     MOTION_RUN_SPEED, _RETURN, _V0 and _ACC. Reached from ATEL call targets 70A8 and 70B2.
     /// </summary>
@@ -266,11 +297,14 @@ public static class EngineAddresses
     ///     thread's own priority level. Cdecl, two arguments like the all-levels rate setters: it
     ///     reads the level out of worker+0x32 rather than taking it.
     ///
-    ///     The move reader adds this field to the velocity once per call with no delta term, and the
-    ///     same field is the brake in min(v + g, sqrt(2 g d)) and the energy term behind it, so it is
-    ///     a per-call rate in exactly the sense the twelve turning setters are. It is the acceleration
-    ///     of every script-thrown object: the five in-match blitzball scripts each play
-    ///     setGravityMode(Swimming), setGravity(10), the arc, then setGravityMode(None).
+    ///     Read in exactly two places, both in the move reader's type 3 and 4 tail: as the increment
+    ///     in v += a, and as the brake ceiling in sqrt(2 a d). Those want different scale exponents,
+    ///     so no single factor at this setter is right for both - see the AtelWorkerGravity switch,
+    ///     which is off for that reason. Move type 9 reads the field a third time, as the quadratic
+    ///     coefficient of an arc over normalised progress, where it is not frame-bound at all.
+    ///
+    ///     It is not the acceleration of a thrown blitzball. The blitzball script corpus starts only
+    ///     move types 1 and 2, neither of which reads this field.
     /// </summary>
     public const nint AtelSetMoveGravity = 0x46EFD0;
 
