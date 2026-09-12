@@ -305,11 +305,21 @@ public sealed record FpsUnlockConfig
     ///
     ///     Its two entry points are not an advance and a draw: both run the same worker over a
     ///     different object list, and both decrement the per-channel wait bytes that are the set's
-    ///     only clock. Holding the mode 0 call alone therefore retimes half its population. Off by
-    ///     default because the opcode handlers behind that worker are unread, so "a hold is safe"
-    ///     is probable rather than established.
+    ///     only clock. MsEffectProcess reaches the first from mode 0 and the second from mode 1, and
+    ///     only mode 0 is held, so with this off the set runs half retimed and half not - which is
+    ///     the defect this module has already shipped three times, not a safe default.
+    ///
+    ///     <para>On since 2026-09-12, and the measurement is what changed.</para> It was off because
+    ///     the opcode handlers behind that worker were unread and "a hold is safe" was probable
+    ///     rather than established. All 119 of them have now been read the only way that settles it:
+    ///     not one reads sg_count, sg_rate, sg_ratef, the presented-frame counter, the frameskip
+    ///     counter, g_isNeedSync or Sg_GetCurExecFrames, and neither does any of the 364 functions
+    ///     they call. There is no clock inside the VM that would keep running while it is held. The
+    ///     one risk that was named, op_spr_alloc and op_spr_free around the list, appears only one
+    ///     level down and always as a pair in the same function, so it is scratch rather than a pool
+    ///     something else drains per frame.
     /// </summary>
-    public bool EternalEffectHold { get; init; }
+    public bool EternalEffectHold { get; init; } = true;
 
     /// <summary>
     ///     Attach the MsEffectProcess hook and count advance and draw calls without holding
@@ -670,6 +680,23 @@ public sealed record FpsUnlockConfig
     ///     passed through untouched.
     /// </summary>
     public bool ChShadeRamps { get; init; } = true;
+
+    /// <summary>
+    ///     Divide the per-call turn rate of the scripted element pitch, so an actor tilts over the
+    ///     time the script asked for instead of half of it.
+    ///
+    ///     ATEL <c>?setPitch [506Dh]</c> takes a target angle and a rate in degrees per call, and
+    ///     Ch_CalcElement steps the actor's element pitch towards the target by at most that much
+    ///     once per presented frame. 60 authored call sites in 9 event scripts, rates of 3, 5, 10,
+    ///     15, 30 and 45 degrees - so up to 1350 degrees a second at 30 Hz and 2700 at 60.
+    ///
+    ///     The 30 sites that pass a rate of zero are snaps and are passed through: the setter's zero
+    ///     branch assigns the target to the current angle, so scaling it would turn a hard cut into
+    ///     a one-frame ramp. Its own switch rather than part of
+    ///     <see cref="ChFacingTurnRate"/> because that one is every actor in the game and this one
+    ///     is nine scripted scenes, so they have to be separable in a bisection.
+    /// </summary>
+    public bool ChPitchTurnRate { get; init; } = true;
 
     /// <summary>
     ///     Scale move type 9's ten-pass lead-in, the wind-up an object waits out before it starts

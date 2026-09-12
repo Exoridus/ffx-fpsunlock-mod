@@ -132,6 +132,17 @@ public static class EngineAddresses
     public const nint ChSwimMotionController = 0x435DB0;
 
     /// <summary>
+    ///     <c>void(Chr* actor, float angle, float degreesPerCall)</c>, the arm behind ATEL
+    ///     <c>?setPitch [506Dh]</c>. Stores the wrapped target at Chr+0x160 and the rate at Chr+0x164
+    ///     as radians, and Ch_CalcElement steps Chr+0x15c towards the target by at most that much per
+    ///     presented frame, applying the result as an X rotation on the element matrix.
+    ///
+    ///     A rate of zero takes the other branch: it assigns the target to the current angle as well
+    ///     and stores zero, which is a snap rather than a slow turn. Measured cdecl, one caller.
+    /// </summary>
+    public const nint ChSetPitchTarget = 0x435870;
+
+    /// <summary>
     ///     The arm for all seven of an actor's <c>{current, target, frames}</c> ramp records at
     ///     Chr+0x330, stride 0xc: <c>void(float* record, float target, int frames)</c>. Writes the
     ///     target and the count, and assigns the target outright when the count is zero. Measured

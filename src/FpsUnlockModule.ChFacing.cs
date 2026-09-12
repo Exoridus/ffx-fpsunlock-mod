@@ -174,4 +174,68 @@ public unsafe sealed partial class FpsUnlockModule
         _ch_facing_rates[1] = ChFacingWalking  / scale;
         _ch_facing_rates[2] = ChFacingStanding / scale;
     }
+
+    // --- The scripted element pitch, the same class one field along ---
+
+    private long _ch_pitch_sets;
+    private long _ch_pitch_scaled;
+
+    /// <summary>
+    ///     Pitch arms seen and pitch arms whose rate was divided. The two differ by the snaps, which
+    ///     are half of the sixty authored call sites.
+    /// </summary>
+    private string ch_pitch_counts() => $"chpitch={_ch_pitch_sets}/{_ch_pitch_scaled}";
+
+    /// <summary>
+    ///     ATEL <c>?setPitch [506Dh]</c> aims an actor's element pitch at an angle and gives it a
+    ///     rate to get there, and that rate is degrees per call.
+    ///
+    ///     The setter stores the target at <c>Chr+0x160</c> and the rate at <c>Chr+0x164</c>
+    ///     converted to radians, and Ch_CalcElement steps <c>Chr+0x15c</c> towards the target by at
+    ///     most that much once per presented frame through the same Sg_StepAngleTowards the facing
+    ///     uses, then applies the result as an X rotation on the element matrix. So it is the facing
+    ///     correction one field along, with the rate coming from a script argument instead of from
+    ///     one of three constants.
+    ///
+    ///     Corrected at the setter rather than at the step, for the reason the twelve ATEL rate
+    ///     setters are: it is a leaf with one caller, the opcode handler, and the field it writes is
+    ///     the only place the value lives.
+    ///
+    ///     <para>A rate of zero is not a slow turn.</para> The setter branches on it: zero assigns
+    ///     the target to the current angle as well and stores a rate of zero, which is the snap, and
+    ///     the step then moves nothing. Half of the sixty authored sites pass zero, so scaling it
+    ///     would turn thirty hard cuts into thirty one-frame ramps.
+    /// </summary>
+    private bool init_ch_pitch_hook()
+    {
+        if (!_config.ChPitchTurnRate) return true;
+
+        return hook_or_log("Ch_SetPitchTarget", EngineAddresses.ChSetPitchTarget,
+            () => new FhMethodHandle<d_ch_set_pitch>(new FhMethodLocation(EngineAddresses.ChSetPitchTarget, 0))
+                .hook(this, h_ch_set_pitch));
+    }
+
+    /* Measured cdecl: the body reads [ebp+8], [ebp+0xc] and [ebp+0x10] and ends 5d c3, so the caller
+     * cleans. Both angle and rate are floats - the setter loads them with fld dword and converts the
+     * rate with an fmul and an fdiv against pi and 180, which are 8-byte doubles in .rdata and are
+     * shared, so neither is a lever. */
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void d_ch_set_pitch(nint actor, float angle, float rate);
+
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private void h_ch_set_pitch(nint actor, float angle, float rate)
+    {
+        _ch_pitch_sets++;
+
+        float scale = Scale;
+
+        if (scale != 1f && rate != 0f)
+        {
+            rate /= scale;
+            _ch_pitch_scaled++;
+        }
+
+        new FhMethodHandle<d_ch_set_pitch>(new FhMethodLocation(EngineAddresses.ChSetPitchTarget, 0))
+            .chain_from(h_ch_set_pitch).fnptr!(actor, angle, rate);
+    }
 }
