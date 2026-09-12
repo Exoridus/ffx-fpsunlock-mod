@@ -71,15 +71,19 @@ jobs:
         shell: pwsh
         run: pwsh tools/bootstrap.ps1
 
+      - name: Build Fahrenheit host
+        shell: pwsh
+        run: pwsh tools/build-fahrenheit.ps1 -Configuration Release
+
       - name: Build
         shell: pwsh
         run: pwsh build.ps1 -Configuration Release -OutDir .release/stage
 
-      - name: Package release archive
+      - name: Package release archives
         shell: pwsh
         env:
           VERSION: ${{ inputs.version }}
-        run: ./.github/scripts/New-ReleasePackage.ps1 -ModId $env:MOD_ID -Tag $env:VERSION -StageDir .release/stage -OutDir .release
+        run: ./.github/scripts/New-ReleasePackage.ps1 -ModId $env:MOD_ID -Tag $env:VERSION -StageDir .release/stage -OutDir .release -FahrenheitDeployDir .workspace/fahrenheit/artifacts/deploy/rel
 
       - name: Generate release notes
         shell: pwsh
@@ -109,6 +113,8 @@ jobs:
           fail_on_unmatched_files: true
           body_path: .release/release-notes.md
           files: |
+            .release/fahrenheit-full-${{ inputs.version }}.zip
+            .release/fahrenheit-full-${{ inputs.version }}.zip.sha256
             .release/${{ env.MOD_ID }}-mod-${{ inputs.version }}.zip
             .release/${{ env.MOD_ID }}-mod-${{ inputs.version }}.zip.sha256
         env:

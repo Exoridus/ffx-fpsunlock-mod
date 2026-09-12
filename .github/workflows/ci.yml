@@ -40,6 +40,10 @@ jobs:
         shell: pwsh
         run: pwsh tools/bootstrap.ps1
 
+      - name: Build Fahrenheit host
+        shell: pwsh
+        run: pwsh tools/build-fahrenheit.ps1 -Configuration Release
+
       - name: Build
         shell: pwsh
         run: pwsh build.ps1 -Configuration Release -OutDir .release/stage
@@ -53,7 +57,7 @@ jobs:
 
       - name: Package release archive (preflight)
         shell: pwsh
-        run: ./.github/scripts/New-ReleasePackage.ps1 -ModId $env:MOD_ID -Tag $env:PREFLIGHT_TAG -StageDir .release/stage -OutDir .release
+        run: ./.github/scripts/New-ReleasePackage.ps1 -ModId $env:MOD_ID -Tag $env:PREFLIGHT_TAG -StageDir .release/stage -OutDir .release -FahrenheitDeployDir .workspace/fahrenheit/artifacts/deploy/rel
 
       - name: Generate release notes (preflight)
         shell: pwsh

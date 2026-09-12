@@ -28,6 +28,8 @@ $repoUrl = "https://github.com/$Repository"
 $project = $Repository.Split('/')[-1]
 $asset = "$ModId-mod-$Tag.zip"
 $assetUrl = "$repoUrl/releases/download/$Tag/$asset"
+$fullAsset = "fahrenheit-full-$Tag.zip"
+$fullAssetUrl = "$repoUrl/releases/download/$Tag/$fullAsset"
 
 # --exclude keeps a pre-existing Tag (dry runs against a released commit) from
 # being reported as its own predecessor.
@@ -59,12 +61,22 @@ $lines = @(
     '',
     '**Experimental preview. Build success does not establish in-game compatibility. See the README for known limitations.**',
     '',
-    'Pre-built mod package for Final Fantasy X HD Remaster running under Fahrenheit:',
+    'Pre-built packages for Final Fantasy X HD Remaster running under Fahrenheit:',
     '',
-    "- [$asset]($assetUrl)",
+    "- Full package, Fahrenheit host plus the mod: [$fullAsset]($fullAssetUrl)",
+    "  - SHA256: [$fullAsset.sha256]($fullAssetUrl.sha256)",
+    "- Mod only, for an existing Fahrenheit installation: [$asset]($assetUrl)",
     "  - SHA256: [$asset.sha256]($assetUrl.sha256)",
     '',
     '## Installation',
+    '',
+    '### Full package',
+    '',
+    "1. Extract ``$fullAsset`` into the game directory, next to ``FFX.exe``.",
+    '2. Install the Microsoft .NET Runtime 10 (x86) if the launcher asks for it.',
+    '3. Start the game through `start-ffx-with-mods.cmd`. See the bundled `README.txt`.',
+    '',
+    '### Mod only',
     '',
     '1. Install Fahrenheit and start the game once, so `fahrenheit/` exists next to `FFX.exe`.',
     "2. Extract ``$asset`` into that ``fahrenheit/`` directory. It contains ``mods/$ModId/``.",

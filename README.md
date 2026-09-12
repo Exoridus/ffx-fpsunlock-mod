@@ -27,13 +27,22 @@ No interpolated FMVs, extracted assets or replacement game files are included. D
 
 ## Installation
 
-1. Install Fahrenheit following its upstream instructions.
-2. Download the ZIP and its SHA-256 checksum from [Releases](https://github.com/Exoridus/ffx-fpsunlock-mod/releases).
-3. Extract the ZIP into the game's `fahrenheit/` directory. The resulting path must be `fahrenheit/mods/fhfpsunlock/fhfpsunlock.dll`.
-4. Add `fhfpsunlock` on its own line to `fahrenheit/mods/loadorder`.
-5. Launch the game and adjust the mod's settings in Fahrenheit.
+Every release carries two archives. `fahrenheit-full-<version>.zip` is the ready-to-play package: the Fahrenheit host built from the pinned revision, the mod, a `loadorder` naming it, and the launcher scripts. `fhfpsunlock-mod-<version>.zip` is the mod alone, for an existing Fahrenheit installation.
 
-To uninstall, close the game, remove that loadorder entry and remove `fahrenheit/mods/fhfpsunlock/`. Do not overwrite the game's executable or data archives.
+Full package:
+
+1. Download the ZIP and its SHA-256 checksum from [Releases](https://github.com/Exoridus/ffx-fpsunlock-mod/releases).
+2. Extract it into the game directory, next to `FFX.exe`. The resulting paths must be `fahrenheit/bin/fhstage0.exe` and `fahrenheit/mods/fhfpsunlock/fhfpsunlock.dll`.
+3. Start the game through `start-ffx-with-mods.cmd`, which checks for the Microsoft .NET Runtime 10 (x86) and offers to install it. The bundled `README.txt` has the details.
+
+Mod only:
+
+1. Install Fahrenheit following its upstream instructions.
+2. Extract the mod ZIP into the game's `fahrenheit/` directory. The resulting path must be `fahrenheit/mods/fhfpsunlock/fhfpsunlock.dll`.
+3. Add `fhfpsunlock` on its own line to `fahrenheit/mods/loadorder`.
+4. Launch the game and adjust the mod's settings in Fahrenheit.
+
+To uninstall, close the game, remove that loadorder entry and remove `fahrenheit/mods/fhfpsunlock/`, or remove the whole `fahrenheit/` directory for the full package. Do not overwrite the game's executable or data archives.
 
 Verify the ZIP with `Get-FileHash <downloaded.zip> -Algorithm SHA256` and compare the value with the `.sha256` file.
 
@@ -50,9 +59,16 @@ pwsh build.ps1 -Configuration Release -OutDir .release/stage
 
 Bootstrap checks out the pinned public Fahrenheit source. No game installation or private sibling repository is required to compile. `-Deploy` is an optional local convenience with a machine-specific destination in `build.ps1`; use staged output for other installations.
 
+The full package additionally needs the Fahrenheit host, whose native loaders require Visual Studio (or Build Tools) with the C++ workload and an integrated vcpkg:
+
+```powershell
+pwsh tools/build-fahrenheit.ps1 -Configuration Release
+pwsh .github/scripts/New-ReleasePackage.ps1 -Tag v<VERSION> -StageDir .release/stage -OutDir .release -FahrenheitDeployDir .workspace/fahrenheit/artifacts/deploy/rel
+```
+
 ## Releases and CI
 
-CI builds on Windows and exercises the same package and release-note scripts used by releases. The ZIP contains only `mods/fhfpsunlock/`: the mod DLL, manifest, dependency metadata and localization files. Fahrenheit itself and game assets are not bundled.
+CI builds on Windows, builds the Fahrenheit host from the pinned revision, and exercises the same package and release-note scripts used by releases. The mod ZIP contains only `mods/fhfpsunlock/`: the mod DLL, manifest, dependency metadata and localization files. The full ZIP adds Fahrenheit's `bin/` as built from `fahrenheit.release.ref`, a `loadorder`, and the launcher scripts from `packaging/`. Game assets are never bundled.
 
 Maintainers set the manifest version, merge to `main`, then dispatch:
 
