@@ -274,6 +274,13 @@ public static class EngineAddresses
     /// </summary>
     public const nint AtelSetMoveGravity = 0x46EFD0;
 
+    /// <summary>
+    ///     The <c>mov eax, 0xA</c> inside AtelInitBasicWork that feeds the only write of
+    ///     worker+0xb16, move type 9's lead-in threshold in passes. Patched rather than hooked; see
+    ///     FpsUnlockModule.MoveLeadIn.cs.
+    /// </summary>
+    public const nint AtelMoveLeadInLoad = 0x46CDE5;
+
     /// <summary>ATEL setYawTurnStep [002Bh] -> move+0x3c on one level. Cdecl, three arguments.</summary>
     public const nint AtelSetYawTurnStep = 0x4714C0;
 

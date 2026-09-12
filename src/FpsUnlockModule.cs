@@ -403,5 +403,6 @@ public unsafe sealed partial class FpsUnlockModule : FhModule
         patch_particle_timeline();
         patch_battle_cursor_blink();
         patch_dream_overlay_stars();
+        patch_move_lead_in();
     }
 }

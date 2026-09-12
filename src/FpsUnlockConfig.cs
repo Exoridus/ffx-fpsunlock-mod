@@ -611,6 +611,18 @@ public sealed record FpsUnlockConfig
     public bool AtelWorkerGravity { get; init; } = true;
 
     /// <summary>
+    ///     Scale move type 9's ten-pass lead-in, the wind-up an object waits out before it starts
+    ///     interpolating.
+    ///
+    ///     The threshold at worker+0xb16 has one writer in the image and no ATEL opcode behind it, so
+    ///     none of the deadline setters reaches it: at 60 Hz the wind-up lasts 166 ms against an
+    ///     authored 333 ms. An image patch on the immediate rather than a hook on the initialiser,
+    ///     because the catalog's calling convention for that function is a default rather than a
+    ///     measurement.
+    /// </summary>
+    public bool AtelWorkerLeadIn { get; init; } = true;
+
+    /// <summary>
     ///     Correct the position integrator of the ATEL workers that are not bound to a Ch
     ///     character: the field and event camera, and every map group or map part a script
     ///     attaches. It adds the worker's speed along its facing to its position once per call with
