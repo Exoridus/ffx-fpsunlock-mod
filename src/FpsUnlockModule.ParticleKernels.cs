@@ -70,6 +70,29 @@ public unsafe sealed partial class FpsUnlockModule
         ("pppAngMove",         0x35BFE0, true ), ("pppAngAccele",       0x35B940, true ),
         ("pppSclMove",         0x35C090, true ), ("pppSclAccele",       0x35B9F0, true ),
         ("pppColMove",         0x35C480, true ), ("pppColAccele",       0x35BB30, true ),
+
+        // The spawners, and the reason a corrected scene holds more particles than an uncorrected
+        // one. Each of these creates objects on a schedule counted in passes and in nothing else:
+        // the Ap family keeps a countdown at obj+0xa2, decrements it once at the tail of every call
+        // and, at zero, spawns the step's authored batch and re-arms from the step data;
+        // pppKeBornRnd has no counter at all and spawns on a random gate evaluated per call. At
+        // 60 Hz all of them therefore emit at twice the authored rate.
+        //
+        // That was invisible while nothing else was corrected, because objects also aged twice as
+        // fast and the population balanced. Halving the age step ends the cancellation: births stay
+        // doubled while deaths return to their authored wall clock, and the standing population
+        // doubles until it pins at the authored maximum. Measured in run 20260912_084409, at the
+        // instant the age step was written: group 1 went from 34 objects to 64 and pinned there,
+        // groups 7 to 11 from 5 to 13, and obj_total from 83 to 254. The pass-counted ones are the
+        // same hazard as the field group restart countdown, one level further down.
+        //
+        // pppVertexAp alone is 2,047 uses across the shipped field data, against 207 for the
+        // busiest kernel already on this list. pppFaceAp is the seventh member of the family and is
+        // absent deliberately: no shipped room uses it, and the address the table gives for it does
+        // not resolve to a function in the decompilation.
+        ("pppVertexAp",        0x357930, true ), ("pppVertexApLc",      0x3580E0, true ),
+        ("pppVertexApDisPos",  0x357D20, true ), ("pppVertexApAt",      0x3583D0, true ),
+        ("pppPointAp",         0x3574B0, true ), ("pppKeBornRnd",       0x3585C0, true ),
     ];
 
     /// <summary>
