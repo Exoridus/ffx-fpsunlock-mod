@@ -39,6 +39,9 @@ public unsafe sealed partial class FpsUnlockModule
     private TimeSpan _fp_probe_last;
     private long _fp_countdowns_seen;
 
+    /// <summary>Last sampled age per group, keyed by group index, with the object it was read from.</summary>
+    private readonly Dictionary<int, (nint Obj, int Age)> _fp_ages = [];
+
     /// <summary>
     ///     Samples the array once a second from the frame hook, which is the game thread and is
     ///     between two pppFpLoop passes rather than inside one, so nothing is being written while it
@@ -71,7 +74,38 @@ public unsafe sealed partial class FpsUnlockModule
 
             if (countdown >= 0) _fp_countdowns_seen++;
 
-            live.Add($"[{i} cd={countdown} f1c={mgr[0x1C]} f1d={mgr[0x1D]}]");
+            // The manager's own clock, which decides emission and the group's end and is therefore
+            // what says whether a field group is retimed at all: _pppRunPartFp adds the step at
+            // +0x10 onto the accumulator at +0x8 once per pass, every emitter spawns when its due
+            // time is reached by that accumulator, and the group ends when the accumulator reaches
+            // the authored duration at +0x4. A step at its authored value means emission rate and
+            // object lifetime both run at twice their wall-clock speed at 60 Hz, which is more
+            // particles each cut short, while a halved step means the field half is correct and any
+            // remaining popping is in the objects rather than in the manager.
+            // The age of this group's first live object, and how far it moved since the last
+            // sample. This is the number that decides the lifetime question and the only one not
+            // derivable from anything already logged: the timeline patch writes a step of 0x800
+            // into the two instructions that age an object once per pass, and the field pass runs
+            // once per presented frame, so a correct object gains 60 * 0x800 = 0x1E000 per second.
+            // Half that is an object living twice as long as authored - more particles on screen at
+            // once, since emission is an authored list of due times rather than a rate - and double
+            // it is one dying in half the time.
+            nint first = *(nint*)(mgr + 0x30);
+            string age = "age=-";
+
+            if (first != 0)
+            {
+                int now_age = *(int*)(first + 0xC);
+                age = _fp_ages.TryGetValue(i, out (nint Obj, int Age) was) && was.Obj == first
+                    ? $"age=0x{now_age:X} d=0x{now_age - was.Age:X}"
+                    : $"age=0x{now_age:X} d=new";
+
+                _fp_ages[i] = (first, now_age);
+            }
+            else _fp_ages.Remove(i);
+
+            live.Add($"[{i} cd={countdown} f1c={mgr[0x1C]} f1d={mgr[0x1D]} " +
+                     $"step=0x{*(int*)(mgr + 0x10):X} acc=0x{*(int*)(mgr + 0x08):X} dur=0x{*(int*)(mgr + 0x04):X} {age}]");
         }
 
         // Logged even when nothing is live: an empty sample is what says the field half was reached

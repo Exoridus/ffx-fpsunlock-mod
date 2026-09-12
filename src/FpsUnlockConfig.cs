@@ -382,6 +382,20 @@ public sealed record FpsUnlockConfig
     public string[] ParticleKernelExcept { get; init; } = [];
 
     /// <summary>
+    ///     Retime the eight generic integrators by keeping half of what each call adds, instead of
+    ///     skipping every second call. Takes precedence over the hold for those eight; every other
+    ///     step kernel is unaffected and still held.
+    ///
+    ///     The hold gets the average rate right and the image wrong: a held kernel leaves its object
+    ///     untouched for a whole frame, so particles advance on 30 of 60 frames while the camera
+    ///     advances on all of them, and an object can die or be born between two updates - which is
+    ///     a particle vanishing instead of fading out, or appearing at full opacity instead of
+    ///     fading in. Scaling the delta gives the same wall-clock rate with a valid value on every
+    ///     frame.
+    /// </summary>
+    public bool ParticleIntegratorScale { get; init; }
+
+    /// <summary>
     ///     Overwrite the hardcoded 29.97 the video update loop multiplies its time step by
     ///     (a double in .rdata at 0x74A180). Null leaves it alone.
     ///

@@ -270,7 +270,7 @@ public unsafe sealed partial class FpsUnlockModule : FhModule
     /* Every per-subsystem counter as one string. Shared by the periodic telemetry line and by the
      * overlay's marker button so the two can never drift into reporting different sets. */
     private string counter_snapshot()
-        => $"{particle_counts()}, {effect_counts()}, {kernel_counts()}, {motion_counts()}, {survey_counts()}, " +
+        => $"{particle_counts()}, {effect_counts()}, {kernel_counts()}, {integrator_counts()}, {motion_counts()}, {survey_counts()}, " +
            $"{engine_state_counts()}, " +
            $"{motion_sequence_counts()}, " +
            $"{frame_sequence_counts()}, {lens_sprite_counts()}, " +

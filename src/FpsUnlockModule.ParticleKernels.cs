@@ -175,7 +175,7 @@ public unsafe sealed partial class FpsUnlockModule
 
     private bool init_particle_kernel_hooks()
     {
-        if (!_config.ParticleKernelHold) return true;
+        if (!_config.ParticleKernelHold && !_config.ParticleIntegratorScale) return true;
 
         bool ok = true;
 
@@ -183,13 +183,18 @@ public unsafe sealed partial class FpsUnlockModule
         {
             // Every kernel is hooked so its call count is known; only the selected ones are held.
             // A scene's own list of steps is the thing worth knowing, and it costs one counter.
-            bool hold = safe
+            bool hold = _config.ParticleKernelHold && safe
                         && (_config.ParticleKernelOnly.Length == 0
                             || _config.ParticleKernelOnly.Contains(name, StringComparer.OrdinalIgnoreCase))
                         && !_config.ParticleKernelExcept.Contains(name, StringComparer.OrdinalIgnoreCase);
 
             string key = name;
             _ke_by_name[key] = (0, 0);
+
+            // An integrator is retimed by scaling what it adds rather than by skipping it, which is
+            // the same rate with a valid value on every frame. It then never takes the hold path.
+            IntegratorWidth? width = _config.ParticleIntegratorScale ? integrator_width(name) : null;
+            if (width is not null) hold = false;
 
             d_ke_update? self = null;
 
@@ -198,6 +203,13 @@ public unsafe sealed partial class FpsUnlockModule
                 _ke_calls++;
                 note_keyframe_grid(data);
                 var counts = _ke_by_name[key];
+
+                if (width is IntegratorWidth w)
+                {
+                    _ke_by_name[key] = (counts.Calls + 1, counts.Held);
+                    run_integrator_scaled(rva, self!, obj, data, prog, w);
+                    return;
+                }
 
                 // The age decides while the timeline patch is active, because only it is in phase
                 // with the object; without that patch there is no grid to be in phase with and the
