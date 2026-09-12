@@ -43,6 +43,34 @@ public unsafe sealed partial class FpsUnlockModule
     private readonly Dictionary<int, (nint Obj, int Age)> _fp_ages = [];
 
     /// <summary>
+    ///     A group's standing population, which is the number "there are more of them than before" is
+    ///     a claim about and the one number no existing counter carries.
+    ///
+    ///     The engine's own <c>pobjcounter</c> cannot answer it from outside: the battle particle loop
+    ///     writes it to zero at its head every frame and the field pass only adds to it, so a sampler
+    ///     on the present hook reads whatever is left after the reset, which is why pobj has read
+    ///     0/max0 in every run. Its mirror is written only inside the debug overlay branch.
+    ///
+    ///     The manager carries the count directly instead. <c>mgr+0x18</c> is the number of emitter
+    ///     entries and <c>mgr+0x3c</c> the array of them, 0x10 bytes each, and each entry keeps its
+    ///     own live object count as a ushort at <c>+0xc</c> - maintained by pppCreatePObject and
+    ///     pppDeletePObject, so it is exact rather than sampled. Summing it is the same walk
+    ///     FUN_00712c60 and FUN_007170f0 make.
+    /// </summary>
+    private static int live_objects(byte* mgr)
+    {
+        int emitters = *(int*)(mgr + 0x18);
+        nint array   = *(nint*)(mgr + 0x3c);
+
+        if (array == 0 || emitters <= 0) return 0;
+
+        int objects = 0;
+        for (int e = 0; e < emitters; e++) objects += *(ushort*)(array + e * 0x10 + 0xc);
+
+        return objects;
+    }
+
+    /// <summary>
     ///     Samples the array once a second from the frame hook, which is the game thread and is
     ///     between two pppFpLoop passes rather than inside one, so nothing is being written while it
     ///     reads. One line per sample rather than one per manager, so a play session stays readable.
@@ -64,6 +92,7 @@ public unsafe sealed partial class FpsUnlockModule
         byte* managers = FhUtil.ptr_at<byte>(EngineAddresses.PpvFpManagers);
 
         List<string> live = [];
+        int total_objects = 0;
 
         for (int i = 0; i < count; i++)
         {
@@ -74,22 +103,20 @@ public unsafe sealed partial class FpsUnlockModule
 
             if (countdown >= 0) _fp_countdowns_seen++;
 
-            // The manager's own clock, which decides emission and the group's end and is therefore
-            // what says whether a field group is retimed at all: _pppRunPartFp adds the step at
-            // +0x10 onto the accumulator at +0x8 once per pass, every emitter spawns when its due
-            // time is reached by that accumulator, and the group ends when the accumulator reaches
-            // the authored duration at +0x4. A step at its authored value means emission rate and
-            // object lifetime both run at twice their wall-clock speed at 60 Hz, which is more
-            // particles each cut short, while a halved step means the field half is correct and any
-            // remaining popping is in the objects rather than in the manager.
-            // The age of this group's first live object, and how far it moved since the last
-            // sample. This is the number that decides the lifetime question and the only one not
-            // derivable from anything already logged: the timeline patch writes a step of 0x800
-            // into the two instructions that age an object once per pass, and the field pass runs
-            // once per presented frame, so a correct object gains 60 * 0x800 = 0x1E000 per second.
-            // Half that is an object living twice as long as authored - more particles on screen at
-            // once, since emission is an authored list of due times rather than a rate - and double
-            // it is one dying in half the time.
+            // The manager's own clock. _pppRunPartFp adds the step at +0x10 onto the accumulator at
+            // +0x8 once per pass, an emitter spawns when its authored due time is reached by that
+            // accumulator, and the group ends when the accumulator reaches the duration at +0x4. It
+            // is the emission and group-end clock only: no kernel reads it, and an object's own
+            // lifetime runs on the age below instead. A step still at the authored 0x1000 therefore
+            // means this group's emission schedule and its end are running at twice wall-clock speed
+            // against objects that age correctly.
+            //
+            // The age of this group's first live object and how far it moved since the last sample.
+            // The timeline patch writes 0x800 into the two instructions that age an object once per
+            // pass, and the field pass runs once per presented frame, so a correct object gains
+            // 60 * 0x800 = 0x1E000 per second. Half that is an object living twice as long as
+            // authored; double it is one dying in half the time. The reading is only meaningful
+            // while the object identity holds, which d=new marks.
             nint first = *(nint*)(mgr + 0x30);
             string age = "age=-";
 
@@ -104,13 +131,17 @@ public unsafe sealed partial class FpsUnlockModule
             }
             else _fp_ages.Remove(i);
 
+            int objects = live_objects(mgr);
+            total_objects += objects;
+
             live.Add($"[{i} cd={countdown} f1c={mgr[0x1C]} f1d={mgr[0x1D]} " +
-                     $"step=0x{*(int*)(mgr + 0x10):X} acc=0x{*(int*)(mgr + 0x08):X} dur=0x{*(int*)(mgr + 0x04):X} {age}]");
+                     $"step=0x{*(int*)(mgr + 0x10):X} acc=0x{*(int*)(mgr + 0x08):X} dur=0x{*(int*)(mgr + 0x04):X} " +
+                     $"emit={*(int*)(mgr + 0x18)} obj={objects} {age}]");
         }
 
         // Logged even when nothing is live: an empty sample is what says the field half was reached
         // at all, and distinguishes a scene with no groups from a probe that never ran.
         _logger.Info($"[FpsUnlock] fp_mgr t={ElapsedSeconds:F1} groups={count} live={live.Count} " +
-                     $"counting={_fp_countdowns_seen} {string.Join(' ', live)}");
+                     $"obj_total={total_objects} counting={_fp_countdowns_seen} {string.Join(' ', live)}");
     }
 }

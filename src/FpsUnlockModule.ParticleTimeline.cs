@@ -142,6 +142,74 @@ public unsafe sealed partial class FpsUnlockModule
             _patches.Write(rva + AgeStepImmediateOffset, BitConverter.GetBytes(step));
             _logger.Info($"[FpsUnlock] Particle age step at {name} (RVA 0x{rva:X}) set to 0x{step:X}.");
         }
+
+        retime_running_managers(step);
+    }
+
+    /// <summary>
+    ///     Brings managers that were already running when the rate was adopted onto the new step.
+    ///
+    ///     The age step is an instruction patch and therefore retroactive: every object in the game
+    ///     ages at the new rate from the next pass on. The manager step is not - it is an argument,
+    ///     written into the manager at <c>_pppStartPart</c> and never revisited, because the PS2
+    ///     broadcast that would re-apply it does not run on PC (measured: part_rescaled stays 0 and
+    ///     the global step reads 0). A rate is only adopted after the present rate has been measured,
+    ///     so every manager started before that keeps the authored step for as long as it lives, and
+    ///     its emission clock then runs at twice the wall-clock speed of its objects' ages.
+    ///
+    ///     Measured 2026-09-12 in run 20260912_083012: seven field groups held step=0x1000 for the
+    ///     whole session while the groups started after the patch carried 0x800, and their
+    ///     accumulators advanced 0x3C000 against 0x1E000 per second. A group that ends on its
+    ///     authored duration - <c>_pppRunPartFp</c> returns non-zero at <c>acc >= mgr+0x4</c> - also
+    ///     lives half as long as authored while that lasts.
+    ///
+    ///     Only a step still equal to the authored <see cref="VanillaAgeStep"/> is rewritten. That
+    ///     makes the sweep idempotent (what it writes no longer matches), leaves the magic path's own
+    ///     steps alone, and leaves managers this module already scaled at start alone. A later rate
+    ///     change therefore reaches new managers only; the alternative is a second divisor applied to
+    ///     a value that is already divided.
+    /// </summary>
+    private void retime_running_managers(int step)
+    {
+        int fp = retime_manager_array(FhUtil.ptr_at<byte>(EngineAddresses.PpvFpManagers), field_manager_count(), step);
+
+        int count = FhUtil.get_at<int>(EngineAddresses.PpvPartManagerCount);
+        int part = count <= 0 ? 0 : retime_manager_array(FhUtil.ptr_at<byte>(EngineAddresses.PpvPartManagers), count, step);
+
+        if (fp + part > 0)
+            _logger.Info($"[FpsUnlock] Manager time step set to 0x{step:X} on {fp} field and {part} battle managers " +
+                         $"that were already running.");
+    }
+
+    /// <summary>
+    ///     The live entry count behind the field group table, or zero before field data has loaded.
+    ///     The table pointer is a double indirection and is null until then; the manager array itself
+    ///     is static storage, so a capped count can never walk off anything mapped.
+    /// </summary>
+    private int field_manager_count()
+    {
+        nint table = FhUtil.get_at<nint>(EngineAddresses.PpvFpGroupTable);
+        if (table == 0) return 0;
+
+        int count = *(ushort*)(table + 4);
+        return count > FieldManagerCapacity ? FieldManagerCapacity : count;
+    }
+
+    private static int retime_manager_array(byte* managers, int count, int step)
+    {
+        int changed = 0;
+
+        for (int i = 0; i < count; i++)
+        {
+            int* mgr_step = (int*)(managers + i * ParticleManagerStride + ParticleStepOffset);
+
+            if (*mgr_step != VanillaAgeStep) continue;
+
+            *mgr_step = step;
+            changed++;
+        }
+
+        return changed;
     }
 
     /// <summary>
