@@ -703,15 +703,23 @@ public sealed record FpsUnlockConfig
     ///     rebuilding 20.7 GB.
     ///
     ///     The engine already opens loose files - its fios open asks BigFileStream::openFile first
-    ///     and falls through to CreateFileW on the same lowercased relative path when that returns
-    ///     null. All this does is make the archive answer no for paths the override tree carries.
-    ///     Nothing fabricates a file handle, which is why an override has to sit at exactly the
-    ///     relative path the engine asks for: the fallback receives that path unchanged.
+    ///     and falls through to CreateFileW on the same relative path when that returns null. All
+    ///     this does is make the archive answer no for paths the override tree carries. Nothing
+    ///     fabricates a file handle, which is why an override has to sit at exactly the relative
+    ///     path the engine asks for: the fallback receives that path unchanged.
     ///
     ///     The two hooks are on the path every file open takes, so they are installed only when the
     ///     override tree actually holds something. An empty tree costs nothing.
+    ///
+    ///     <para>Off by default, because installing the hooks crashed the process twice.</para>
+    ///     Both runs died with an access violation reported against the frame hook, once at the
+    ///     first video and once in normal play twenty seconds in, while the last run without the
+    ///     hooks installed played for 653 seconds including videos. The two detours are the only
+    ///     thing that differed. Their measured convention is not in doubt but the detour itself is,
+    ///     and a crash that lands in an unrelated frame is what a stack imbalance looks like. Turn
+    ///     this on only to work on that.
     /// </summary>
-    public bool AssetOverride { get; init; } = true;
+    public bool AssetOverride { get; init; } = false;
 
     /// <summary>
     ///     Which subtrees of the game directory may hold overrides, searched in order.
