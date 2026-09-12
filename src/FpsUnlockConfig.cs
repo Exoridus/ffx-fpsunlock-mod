@@ -38,6 +38,20 @@ public sealed record FpsUnlockConfig
     /// <summary>Suppress engine code that resets the flip vsync interval back to 30 Hz.</summary>
     public bool KeepVsyncInterval { get; init; } = true;
 
+    /// <summary>
+    ///     Rescale the two vertical blank counters to the measured present rate. This is the
+    ///     correction every other one in this module compensates for: the engine advances both
+    ///     counters by a hardcoded 2 per frame and Sg_MainCalcRate turns their delta into the
+    ///     animation rate, so with them left alone at 60 Hz the rate stays at 1.0 and every
+    ///     animation takes a full 30 Hz step twice as often.
+    ///
+    ///     It is on by default and there is no reason to turn it off in play. The switch exists
+    ///     because it is the baseline the rest can be told apart against: with this off at 60 Hz,
+    ///     anything still mistimed is mistimed for a reason of its own rather than through the rate.
+    ///     Turning it off also stops the frame-skip sampling, which is taken inside the same hook.
+    /// </summary>
+    public bool VBlankRate { get; init; } = true;
+
     /// <summary>Feed the character update a delta derived from the measured present interval.</summary>
     public bool CharacterDelta { get; init; } = true;
 

@@ -113,6 +113,10 @@ public unsafe sealed partial class FpsUnlockModule
         _ch_facing_rates[1] = ChFacingWalking;
         _ch_facing_rates[2] = ChFacingStanding;
 
+        // Every site is verified before any is written. Three of the six belong to one controller
+        // and three to the other, and a controller with two of its three rates redirected would
+        // turn at one rate standing and another walking - a partial application is worse than none
+        // and harder to recognise than a refusal.
         foreach (ChFacingSite site in ChFacingSites)
         {
             byte* at = FhUtil.ptr_at<byte>(site.Rva);
@@ -121,7 +125,7 @@ public unsafe sealed partial class FpsUnlockModule
              || !new ReadOnlySpan<byte>(at - site.Prefix.Length, site.Prefix.Length).SequenceEqual(site.Prefix))
             {
                 _logger.Error($"[FpsUnlock] Ch facing site {site.Name} at RVA 0x{site.Rva:X} does not carry " +
-                              $"fld dword ptr [abs32] behind its expected compare; nothing written.");
+                              $"fld dword ptr [abs32] behind its expected compare; no site written.");
                 return false;
             }
 
@@ -134,10 +138,13 @@ public unsafe sealed partial class FpsUnlockModule
             {
                 _logger.Error($"[FpsUnlock] Ch facing site {site.Name} at RVA 0x{site.Rva:X} points at " +
                               $"{(current == null ? "null" : (*current).ToString("F8"))} rather than " +
-                              $"{site.Vanilla:F8}; nothing written.");
+                              $"{site.Vanilla:F8}; no site written.");
                 return false;
             }
+        }
 
+        foreach (ChFacingSite site in ChFacingSites)
+        {
             _patches.Write(site.Rva + ChFacingOperandOffset,
                            BitConverter.GetBytes((uint)(nint)(_ch_facing_rates + site.Slot)));
             _ch_facing_patched++;

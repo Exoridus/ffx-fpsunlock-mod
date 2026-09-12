@@ -55,10 +55,16 @@ public unsafe sealed partial class FpsUnlockModule
     {
         bool ok = true;
 
-        // Not optional: with the counters left alone every animation runs at double speed,
-        // because the engine derives its animation rate from their delta.
-        ok &= hook_or_log("vertical blank counters", EngineAddresses.AdvanceVBlankCounters,
-            () => new FhMethodHandle<d_advance_vblank>(new FhMethodLocation(EngineAddresses.AdvanceVBlankCounters, 0)).hook(this, h_advance_vblank));
+        // The one correction everything else compensates for: with the counters left alone every
+        // animation runs at double speed, because the engine derives its animation rate from their
+        // delta. It has a switch anyway, because it is also the only baseline against which the
+        // other corrections can be told apart - with this off at 60 Hz, anything still mistimed is
+        // mistimed for a reason of its own.
+        if (_config.VBlankRate)
+        {
+            ok &= hook_or_log("vertical blank counters", EngineAddresses.AdvanceVBlankCounters,
+                () => new FhMethodHandle<d_advance_vblank>(new FhMethodLocation(EngineAddresses.AdvanceVBlankCounters, 0)).hook(this, h_advance_vblank));
+        }
 
         if (_config.EventClockOnVblank)
         {
@@ -402,8 +408,19 @@ public unsafe sealed partial class FpsUnlockModule
             .chain_from(h_camera_move_frame).fnptr!(camera_id, arg2, arg3, scale_up(frames), arg5);
     }
 
-    /* Whether all four trailing arguments are durations is not established; PWarp scales all four and
-     * the result is reported as correct, so this follows it until something disagrees. */
+    /* Settled 2026-09-12; the note that used to stand here said it was not established and followed
+     * PWarp on trust. Three of the four are provably frame counts: MsCameraMoveAcc stores the fourth,
+     * fifth and sixth arguments as the three segments of the move and writes their sum into the
+     * total the camera is stepped against, so the engine itself treats them as a duration split
+     * three ways. Scaling them individually keeps the sum consistent, which is why the total is not
+     * scaled as well.
+     *
+     * The seventh is the one that was in doubt and it is scaled for a measured reason rather than a
+     * borrowed one. It is stored beside the three segments and its reader is not locatable in the
+     * snapshot, but over 70,168 camMoveAcc [6014h] sites it is zero in every authored pattern except
+     * the two that dominate the battle scripts - 0/0/80/40 and 0/0/30/15 - where it is exactly half
+     * the third segment. A quantity that is authored as half of a frame count is a frame count, and
+     * scaling three of the four would break that ratio where scaling all four preserves it. */
     private long _camera_acc_calls;
     private long _motion_speed_calls;
 
