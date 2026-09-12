@@ -14,7 +14,9 @@ namespace Fahrenheit.Mods.FpsUnlock;
 ///     carries, and the engine's own fallback opens the file. Nothing here fabricates a VFile,
 ///     which is why the override file has to sit at exactly the relative path the engine asks for
 ///     rather than in a folder of its own: <c>CreateFileW</c> receives that path unchanged and
-///     resolves it against the process working directory, which is the game directory.
+///     resolves it against the process working directory, which is the game directory by the time
+///     any asset is opened. It is not the game directory while this module initialises, which is
+///     why the tree is indexed from the executable's own directory instead.
 ///
 ///     <para>The hooks are not installed when there is nothing to override.</para> They sit on the
 ///     path every single file open takes, so a run with an empty override tree pays nothing at all
@@ -59,11 +61,38 @@ public unsafe sealed partial class FpsUnlockModule
         return path;
     }
 
+    /// <summary>
+    ///     The game directory, taken from the running executable rather than from the working
+    ///     directory. The launcher does <c>pushd fahrenheit\bin</c> before it starts the process, so
+    ///     the working directory is that bin folder and every override root resolved against it is
+    ///     missing; the engine never restores it either, because its only
+    ///     <c>SetCurrentDirectoryA</c> call sits behind the <c>SCE_PHYRE</c> environment variable and
+    ///     returns immediately when that is unset.
+    /// </summary>
+    private static string game_directory()
+    {
+        string? exe = Environment.ProcessPath;
+
+        if (!string.IsNullOrEmpty(exe) && Path.GetDirectoryName(exe) is { Length: > 0 } dir)
+            return Path.GetFullPath(dir);
+
+        return Path.GetFullPath(Directory.GetCurrentDirectory());
+    }
+
     private bool init_asset_override()
     {
         if (!_config.AssetOverride) return true;
 
-        string root = Path.GetFullPath(Directory.GetCurrentDirectory());
+        string root = game_directory();
+
+        /* The working directory is logged because it is what the engine's fallback resolves
+         * against, and it is not the same thing at init as it is in play: the launcher's pushd is
+         * still in force here, while the archive itself is registered as the bare relative
+         * "data\FFX_Data.vbf" and opens - which it could not do from the bin folder, and which is
+         * the evidence that the game directory is current by then. */
+        string cwd = Path.GetFullPath(Directory.GetCurrentDirectory());
+
+        _logger.Info($"[FpsUnlock] Asset override: root={root}, cwd at init={cwd}.");
 
         foreach (string relative in _config.AssetOverrideRoots)
         {
@@ -84,7 +113,7 @@ public unsafe sealed partial class FpsUnlockModule
 
         if (_overrides.Count == 0)
         {
-            _logger.Info("[FpsUnlock] Asset override: nothing found, hooks not installed.");
+            _logger.Info($"[FpsUnlock] Asset override: nothing found under {root}, hooks not installed.");
             return true;
         }
 
