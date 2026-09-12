@@ -1,4 +1,4 @@
-namespace Fahrenheit.Mods.FpsUnlock;
+﻿namespace Fahrenheit.Mods.FpsUnlock;
 
 /// <summary>
 ///     Runs the engine at the display refresh rate and retimes the frame-bound systems that would
@@ -147,6 +147,7 @@ public unsafe sealed partial class FpsUnlockModule : FhModule
         ok &= init_ch_shade_ramp_hook();
         ok &= init_ch_pitch_hook();
         ok &= init_asset_override();
+        ok &= init_video_override();
         ok &= init_field_particle_restart_hook();
 
         // Before the game's own entry point runs, so before any magic overlay can have been loaded
@@ -282,7 +283,7 @@ public unsafe sealed partial class FpsUnlockModule : FhModule
            $"{particle_timeline_counts()}, {frame_skip_counts()}, {eternal_calm_counts()}, " +
            $"{idle_sway_counts()}, {neck_counts()}, {buoyancy_counts()}, " +
            $"{atel_worker_motion_counts()}, {ch_facing_counts()}, {ch_ramp_counts()}, " +
-           $"{ch_pitch_counts()}, {asset_override_counts()}, " +
+           $"{ch_pitch_counts()}, {asset_override_counts()}, {video_override_counts()}, " +
            $"{overlay_spawn_gate_counts()}, " +
            $"{field_restart_counts()}, " +
            $"{rate_guard_counts()}";

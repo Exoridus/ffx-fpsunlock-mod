@@ -722,6 +722,24 @@ public sealed record FpsUnlockConfig
     public bool AssetOverride { get; init; } = false;
 
     /// <summary>
+    ///     Replace an FMV from the override tree by rewriting the path the FMV manager is about to
+    ///     play, instead of answering for every file the engine opens.
+    ///
+    ///     PhyFMVPlayerManager holds the clip's full path in its own buffer at instance+0x4F0, so
+    ///     one hook on its playback entry - once per video - reaches what the two file-layer
+    ///     detours reached on every open. The replacement is written absolute, which makes the
+    ///     archive miss by construction (it hashes the path from stream_prefix_strlen bytes in, so
+    ///     an absolute path hashes from its ninth character and matches no digest) and makes the
+    ///     engine's CreateFileW fallback independent of a working directory the launcher leaves in
+    ///     fahrenheit\bin.
+    ///
+    ///     Needs files in the override tree; with an empty tree nothing is hooked. Covers video
+    ///     only. <see cref="AssetOverride"/> is the general form and is off for the reason recorded
+    ///     there.
+    /// </summary>
+    public bool VideoOverride { get; init; } = true;
+
+    /// <summary>
     ///     Which subtrees of the game directory may hold overrides, searched in order.
     ///
     ///     They have to be under the game directory and at the asset's own relative path, because

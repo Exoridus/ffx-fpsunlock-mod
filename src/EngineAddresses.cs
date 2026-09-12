@@ -565,6 +565,22 @@ public static class EngineAddresses
     /// </summary>
     public const nint FmvPlayerManager = 0x8DED2C;
 
+    /// <summary>
+    ///     PhyFMVPlayerManager's playback entry, thiscall with one stack argument. It compares the
+    ///     path buffer at instance+0x4F0 against the empty string, and when that is non-empty calls
+    ///     fiosUnifyFilename on it, traces "start to play video:%s" and hands it to the player. The
+    ///     buffer is the path in full, prefix included, and it is the manager's own memory rather
+    ///     than a literal - so it can be rewritten in place here, once per video, instead of
+    ///     answering for every file the engine opens.
+    /// </summary>
+    public const nint FmvPlayStart = 0x2D7560;
+
+    /// <summary>
+    ///     Offset of that path buffer inside the manager. The trace in the engine's own log is what
+    ///     it holds: ../../../FFX_Data/GameData/PS3Data/Video/OPL_us.webm, authored case intact.
+    /// </summary>
+    public const int FmvPathOffset = 0x4F0;
+
     // --- Globals (RVA, same convention as the hook targets) ---
 
     /// <summary>

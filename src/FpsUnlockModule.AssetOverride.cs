@@ -108,9 +108,15 @@ public unsafe sealed partial class FpsUnlockModule
         return Path.GetFullPath(Directory.GetCurrentDirectory());
     }
 
+    /// <summary>
+    ///     Builds the override index and, only when <see cref="FpsUnlockConfig.AssetOverride"/> is
+    ///     set, installs the two file-layer detours over it. The index itself is shared: the video
+    ///     path rewrite reads the same dictionary without any detour on the file layer, so the tree
+    ///     is enumerated whenever either consumer wants it.
+    /// </summary>
     private bool init_asset_override()
     {
-        if (!_config.AssetOverride) return true;
+        if (!_config.AssetOverride && !_config.VideoOverride) return true;
 
         string root = game_directory();
 
@@ -143,7 +149,15 @@ public unsafe sealed partial class FpsUnlockModule
 
         if (_overrides.Count == 0)
         {
-            _logger.Info($"[FpsUnlock] Asset override: nothing found under {root}, hooks not installed.");
+            _logger.Info($"[FpsUnlock] Asset override: nothing found under {root}, nothing installed.");
+            return true;
+        }
+
+        if (!_config.AssetOverride)
+        {
+            foreach ((string key, string file) in _overrides.OrderBy(e => e.Key))
+                _logger.Info($"[FpsUnlock] Override file: {key} -> {file} ({new FileInfo(file).Length:N0} bytes)");
+
             return true;
         }
 
