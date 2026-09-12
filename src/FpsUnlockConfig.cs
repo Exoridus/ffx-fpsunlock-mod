@@ -699,6 +699,39 @@ public sealed record FpsUnlockConfig
     public bool ChPitchTurnRate { get; init; } = true;
 
     /// <summary>
+    ///     Let loose files on disk win over the VBF archive, so an asset can be replaced without
+    ///     rebuilding 20.7 GB.
+    ///
+    ///     The engine already opens loose files - its fios open asks BigFileStream::openFile first
+    ///     and falls through to CreateFileW on the same lowercased relative path when that returns
+    ///     null. All this does is make the archive answer no for paths the override tree carries.
+    ///     Nothing fabricates a file handle, which is why an override has to sit at exactly the
+    ///     relative path the engine asks for: the fallback receives that path unchanged.
+    ///
+    ///     The two hooks are on the path every file open takes, so they are installed only when the
+    ///     override tree actually holds something. An empty tree costs nothing.
+    /// </summary>
+    public bool AssetOverride { get; init; } = true;
+
+    /// <summary>
+    ///     Which subtrees of the game directory may hold overrides, searched in order.
+    ///
+    ///     They have to be under the game directory and at the asset's own relative path, because
+    ///     the engine's CreateFileW fallback receives that path unchanged - an override lives at,
+    ///     for example, <c>ffx_data/gamedata/ps3data/video/opk_us.webm</c>. A tidier root such as
+    ///     <c>data/mods</c> would need this module to open the file and hand back a VFile of its
+    ///     own, which is a great deal more machinery for a cosmetic gain.
+    ///
+    ///     <para>The default is the three archive prefixes and not the game directory itself.</para>
+    ///     Those three are exactly what the VBF indexes contain, and scoping to them is a
+    ///     correctness requirement rather than a speed one: rooted at the game directory this would
+    ///     index FFX.exe, the fahrenheit tree and the archives themselves, and then claim any of
+    ///     them the engine happened to ask for - including telling the loader that
+    ///     <c>data/ffx_data.vbf</c> is not in the archive.
+    /// </summary>
+    public string[] AssetOverrideRoots { get; init; } = ["ffx_data", "ffx2_data", "metamenu"];
+
+    /// <summary>
     ///     Scale move type 9's ten-pass lead-in, the wind-up an object waits out before it starts
     ///     interpolating.
     ///

@@ -143,6 +143,27 @@ public static class EngineAddresses
     public const nint ChSetPitchTarget = 0x435870;
 
     /// <summary>
+    ///     <c>bool __thiscall BigFileStream::checkExists(BigFileStream*, const char* path)</c>. MD5-hashes
+    ///     the already-lowercased path and looks the digest up in the five archive slots. Its caller
+    ///     reaches CreateFileW on the real filesystem only when this returns zero.
+    ///
+    ///     Measured thiscall: 412 bytes ending in ret 4, one stack argument, security cookie prologue.
+    ///     The catalog records __stdcall with one parameter, which is its default rather than a
+    ///     measurement.
+    /// </summary>
+    public const nint BigFileCheckExists = 0x21C000;
+
+    /// <summary>
+    ///     <c>VFile* __thiscall BigFileStream::openFile(BigFileStream*, const char* path)</c>, the open
+    ///     half of the same pair and the one the fios open calls first. A null return is what makes it
+    ///     fall through to CreateFileW on the same relative path, storing the two results side by side
+    ///     as handle_vbf and handle_os.
+    ///
+    ///     Measured thiscall: 204 bytes ending in ret 4, path at [ebp+8], same cookie prologue.
+    /// </summary>
+    public const nint BigFileOpenFile = 0x21C0D0;
+
+    /// <summary>
     ///     The arm for all seven of an actor's <c>{current, target, frames}</c> ramp records at
     ///     Chr+0x330, stride 0xc: <c>void(float* record, float target, int frames)</c>. Writes the
     ///     target and the count, and assigns the target outright when the count is zero. Measured
