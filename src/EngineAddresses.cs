@@ -37,6 +37,21 @@ public static class EngineAddresses
     /// </summary>
     public const nint AdvanceVBlankCounters = 0x421F90;
 
+    /// <summary>
+    ///     iSyncGetData(float* total, float* next, int* rate). Cdecl. The one source of the syncdata
+    ///     pacing: FUN_00821E80 calls it once per frame and reads the return value, setting
+    ///     g_isNeedSync when it is anything but 999 and clearing the whole sync state when it is 999.
+    ///
+    ///     Ghidra types the return as void; the caller's `iVar1 = iSyncGetData(...); if (iVar1 ==
+    ///     999)` is what says otherwise, and the caller is the authority.
+    ///
+    ///     999 is the engine's own "this scene has no recording" answer, and taking that path clears
+    ///     g_isNeedSync, both PS2 time accumulators, the rate index and the 0x78-byte rate table. So
+    ///     answering 999 disables the recorded pacing through the door the engine already has, rather
+    ///     than by writing a state it would not otherwise be in.
+    /// </summary>
+    public const nint ISyncGetData = 0x27AAE0;
+
     /// <summary>Sg_SetKeepFps. Cdecl, sbyte in, returns the previous value.</summary>
     public const nint SgSetKeepFps = 0x421C00;
 

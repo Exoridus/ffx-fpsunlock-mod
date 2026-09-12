@@ -66,6 +66,15 @@ public unsafe sealed partial class FpsUnlockModule
                 () => new FhMethodHandle<d_yi_anim_info_init>(new FhMethodLocation(EngineAddresses.YiAnimInfoInit, 0)).hook(this, h_yi_anim_info_init));
         }
 
+        if (_config.SyncDataDisable)
+        {
+            ok &= hook_or_log("iSyncGetData", EngineAddresses.ISyncGetData,
+                () => new FhMethodHandle<d_isync_get_data>(new FhMethodLocation(EngineAddresses.ISyncGetData, 0)).hook(this, h_isync_get_data));
+
+            _logger.Info("[FpsUnlock] Recorded cutscene pacing refused: the three syncdata scenes will run at the " +
+                         "corrected rate and lose the timing their recording asks for.");
+        }
+
         // Two corrections ride this one hook: the delta rewrite below, and the buoyancy hold, which
         // brackets the whole call rather than installing a detour of its own. Either flag alone is
         // reason enough to install it, and the handler acts on each independently.
@@ -196,6 +205,23 @@ public unsafe sealed partial class FpsUnlockModule
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void d_yi_anim_info_init(nint info);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int d_isync_get_data(float* total, float* next, int* rate);
+
+    /// <summary>
+    ///     Answers the engine's own "no recording for this scene" value without asking the sync
+    ///     manager. The three out-parameters are left untouched on purpose: FUN_00821E80 overwrites
+    ///     all of them on the 999 path before anything reads them.
+    /// </summary>
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    private int h_isync_get_data(float* total, float* next, int* rate)
+    {
+        _sync_refused++;
+        return 999;
+    }
+
+    private long _sync_refused;
 
     // --- Handlers ---
 

@@ -149,6 +149,36 @@ public sealed record FpsUnlockConfig
     public bool SyncDataAware { get; init; } = true;
 
     /// <summary>
+    ///     Refuse the recorded pacing outright, so the three syncdata scenes run like any other and
+    ///     this module's corrections apply to them.
+    ///
+    ///     <para>
+    ///     <see cref="SyncDataAware"/> is the polite answer: it stands aside and lets the engine play
+    ///     the scene as recorded. What that costs is measurable - run 20260912_100226 in azit0300
+    ///     presented at 20.0, 20.2, 21.2, 16.2 and 15.3 fps across consecutive windows, because a
+    ///     third of the recorded frames ask for 1.5x nominal and FUN_00821F90 busy-waits out the
+    ///     difference. Coming from 60 Hz everywhere else, that reads as the game breaking.
+    ///     </para>
+    ///
+    ///     <para>
+    ///     The lever is iSyncGetData's return value. 999 is the engine's own answer for a scene with
+    ///     no recording, and FUN_00821E80 responds to it by clearing g_isNeedSync, both PS2 time
+    ///     accumulators, the rate index and the rate table - so this takes a path the engine already
+    ///     has rather than writing a state it would not otherwise be in. The speedrun mod reaches the
+    ///     same end by zeroing a byte in the sync manager at three hand-picked sites; this needs no
+    ///     per-scene knowledge.
+    ///     </para>
+    ///
+    ///     <para>
+    ///     Off by default, and that is a judgement rather than caution: the recording is authored
+    ///     content. A third of its frames deliberately ask for a slower rate, which is pacing somebody
+    ///     chose. Discarding it trades the author's timing for a steady frame rate, and which of the
+    ///     two is wanted is not this module's call.
+    ///     </para>
+    /// </summary>
+    public bool SyncDataDisable { get; init; }
+
+    /// <summary>
     ///     Attach the two counters inside the motion path that sg_rate never reaches - the
     ///     cross-fade length and the sequence VM's wait - and report how often they run.
     /// </summary>
