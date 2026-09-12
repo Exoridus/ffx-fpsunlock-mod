@@ -212,27 +212,6 @@ public sealed record FpsUnlockConfig
     public bool ParticleTimeline { get; init; } = true;
 
     /// <summary>
-    ///     Scale the time step every particle manager is started with. Unlike the held systems this
-    ///     is a real retiming: the effect advances half as far per frame and therefore takes the
-    ///     same wall clock time as at 30 Hz, with drawing and lifetime untouched.
-    /// </summary>
-    public bool Particles { get; init; }
-
-    /// <summary>
-    ///     Hold the particle manager pass instead of scaling its time step, skipping it on the
-    ///     frames a 30 Hz sequence would not have advanced.
-    ///
-    ///     An experiment, off by default, and the only lever consistent with what the step
-    ///     scaling measured: pppRunPartStd runs once per call to _pppRunPart, before and
-    ///     independently of the accumulator update, so particle motion follows how often the pass
-    ///     runs rather than how large its step is. At 60 Hz it simply runs twice as often.
-    ///
-    ///     The risk is that the same call builds the draw packet, in which case particles are not
-    ///     drawn on the held frames and flicker. That is what this flag exists to find out.
-    /// </summary>
-    public bool ParticleHold { get; init; }
-
-    /// <summary>
     ///     Hold the effect advance on skipped frames, leaving the effect draw on every frame.
     ///
     ///     MsEffectProcess(0) advances, MsEffectProcess(1) draws, and the engine calls the advance
@@ -276,34 +255,6 @@ public sealed record FpsUnlockConfig
     ///     and a hold the overlay's state machine cannot survive.
     /// </summary>
     public bool EffectProbe { get; init; }
-
-    /// <summary>
-    ///     Hold the field particle advance on skipped frames. This is the half a cutscene uses:
-    ///     yiCallFieldParticle calls pppFpLoop, which advances each group through _pppRunPartFp.
-    ///
-    ///     Whether it flickers is the question it exists to answer. The packet counter pppFpLoop
-    ///     checks after its loop grows inside the advance, so the draw may well be built there too,
-    ///     in which case held frames draw nothing.
-    /// </summary>
-    public bool FieldParticleHold { get; init; }
-
-    /// <summary>
-    ///     Halve the time step of every field particle manager as it is advanced, instead of
-    ///     skipping the advance.
-    ///
-    ///     The alternative to the hold, and the only one that cannot flicker: the pass still runs
-    ///     every frame and still builds its draw packet, but the manager's accumulator moves half as
-    ///     far. Whether that reaches the motion is the open question - the kernels may advance their
-    ///     objects incrementally per call, in which case the accumulator only governs lifetime and
-    ///     emission and nothing visible changes.
-    ///
-    ///     Superseded by <see cref="ParticleTimeline"/> rather than complementary to it, and it is
-    ///     ignored while that is on. The start-side hook the timeline correction installs sits on
-    ///     _pppStartPart, which both particle halves share, so every field manager's step is already
-    ///     scaled there. Applying this on top halved the same field twice, which advanced field
-    ///     managers at a quarter of the authored step.
-    /// </summary>
-    public bool FieldParticleStepScale { get; init; }
 
     /// <summary>
     ///     Hold the field particle group restart countdown on skipped frames, so a group's absence

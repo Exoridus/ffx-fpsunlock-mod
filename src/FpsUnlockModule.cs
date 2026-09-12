@@ -174,9 +174,8 @@ public unsafe sealed partial class FpsUnlockModule : FhModule
         _logger.Info($"[FpsUnlock] Frame-sequence holds: menu_water={_config.MenuWater} fmv={_config.Fmv} " +
                      $"texture_animation={_config.TextureAnimation}. These are 30 Hz inside a 60 Hz game by " +
                      "design; the real fix is content at the target rate.");
-        _logger.Info(_config.ParticleHold
-            ? $"[FpsUnlock] Particles held on skipped frames: particle_hold={_config.ParticleHold}, step scaling off."
-            : $"[FpsUnlock] Particles retimed by scaling the manager time step: particles={_config.Particles}.");
+        _logger.Info($"[FpsUnlock] Particles retimed on the object age: timeline={_config.ParticleTimeline} " +
+                     $"kernel_hold={_config.ParticleKernelHold} integrator_scale={_config.ParticleIntegratorScale}.");
 
         return ok;
     }
