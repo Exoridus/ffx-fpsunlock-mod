@@ -170,10 +170,28 @@ public sealed record FpsUnlockConfig
     ///     </para>
     ///
     ///     <para>
-    ///     Off by default, and that is a judgement rather than caution: the recording is authored
-    ///     content. A third of its frames deliberately ask for a slower rate, which is pacing somebody
-    ///     chose. Discarding it trades the author's timing for a steady frame rate, and which of the
-    ///     two is wanted is not this module's call.
+    ///     <b>It breaks the dialogue, and that is measured rather than feared.</b> Played in azit0300
+    ///     on 2026-09-12 the scene rendered cleanly at the display rate and its voice lines were cut
+    ///     off by the next one - Rikku's stopped when Wakka's began - with subtitles advancing early
+    ///     by the same margin. The recording is about 25 percent longer than nominal (8,469 frames
+    ///     averaging field_count 2.51 against 2), the script counts frames, and the voice tracks are
+    ///     cut against the dilated length. So this is a scrubbing tool: right for getting past a
+    ///     scene, wrong for watching one.
+    ///     </para>
+    ///
+    ///     <para>
+    ///     The speedrun mod is not a precedent for watching either, which is worth writing down
+    ///     because its comment reads like one. It zeroes the same timing at three sites and at every
+    ///     one the next statement warps past the scene - the Chimeras encounter, a battle, a jumped
+    ///     cutscene value. What it removes is the residual slowdown around a skip.
+    ///     </para>
+    ///
+    ///     <para>
+    ///     Retiming the scene instead of disabling it is not a scale factor, which is why it is not
+    ///     offered here: g_sgSyncRate is indexed by recorded frames consumed rather than by presented
+    ///     frames, so halving sg_rate would consume the recording twice as fast instead of stretching
+    ///     it. Preserving both the length and the placement of the dilation means advancing the
+    ///     recording at half speed and splitting each entry across the presented frames.
     ///     </para>
     /// </summary>
     public bool SyncDataDisable { get; init; }
