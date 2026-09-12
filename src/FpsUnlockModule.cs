@@ -228,7 +228,34 @@ public unsafe sealed partial class FpsUnlockModule : FhModule
     /* The engine sets the interval to 1 in menus and 2 everywhere else. Since this module owns it,
      * every request to change it is dropped rather than chained. */
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
-    private void h_set_vsync(uint interval) { }
+    /// <summary>
+    ///     Swallows the engine's attempts to put the flip interval back to 30 Hz - except while the
+    ///     engine is pacing itself from syncdata, where refusing it is what makes the scene judder.
+    ///
+    ///     In that state the presentation cadence does not come from the limiter at all: FUN_00821F90
+    ///     busy-waits until the recorded PS2 frame time catches up, and the recorded times are not
+    ///     uniform - a third of them ask for 1.5x nominal. With no interval holding the flip to a
+    ///     multiple of the refresh, each frame is presented whenever its own wait happens to end.
+    ///     Measured in run 20260912_100226 inside azit0300: 20.0, 20.2, 21.2, 16.2, 15.3 fps across
+    ///     consecutive windows, which is a spread rather than a rate.
+    ///
+    ///     Letting the interval through there does not make the scene faster - nothing can, the
+    ///     pacing is authored - but it quantises the flip to the refresh instead of leaving it free
+    ///     running, which is the difference between slow and uneven.
+    /// </summary>
+    private void h_set_vsync(uint interval)
+    {
+        if (!IsSyncPaced) return;
+
+        _vsync_passed++;
+        _vsync_last = interval;
+
+        new FhMethodHandle<d_set_vsync>(new FhMethodLocation(EngineAddresses.SetFlipVSyncInterval, 0))
+            .chain_from(h_set_vsync).fnptr?.Invoke(interval);
+    }
+
+    private long _vsync_passed;
+    private uint _vsync_last;
 
     // --- Telemetry ---
 
@@ -257,7 +284,8 @@ public unsafe sealed partial class FpsUnlockModule : FhModule
     ///     to answer afterwards is whether the guard fired at all and how much of the session it ate.
     /// </summary>
     private string rate_guard_counts()
-        => $"rate_guard={_rate_windows_discarded} sync={(EngineSyncPaced ? 1 : 0)}";
+        => $"rate_guard={_rate_windows_discarded} sync={(EngineSyncPaced ? 1 : 0)} " +
+           $"vsync_passed={_vsync_passed}/0x{_vsync_last:X}";
 
     /// <summary>
     ///     Measures the present rate over a five second window and hands it to the rate adoption.
