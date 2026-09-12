@@ -101,6 +101,9 @@ jobs:
             .release/*.sha256
             .release/release-notes.md
           if-no-files-found: error
+          # upload-artifact skips dot-directories unless told otherwise, and
+          # everything here lives under .release/.
+          include-hidden-files: true
 
       # Creates the tag as part of publishing, from the commit this run built.
       - name: Publish release

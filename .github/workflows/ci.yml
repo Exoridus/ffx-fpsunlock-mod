@@ -54,6 +54,7 @@ jobs:
           name: ${{ env.MOD_ID }}-mod-${{ github.sha }}
           path: .release/stage
           if-no-files-found: error
+          include-hidden-files: true
 
       - name: Package release archive (preflight)
         shell: pwsh
