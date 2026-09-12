@@ -399,6 +399,39 @@ public sealed record FpsUnlockConfig
     ///
     ///     The kernels are hooked in FFX.exe by RVA and a magic overlay's own program table holds
     ///     thunks into them, so this reaches battle and magic effects as well as field particles.
+    ///
+    ///     <para>
+    ///     <b>Do not enable this without reading what follows.</b> It has now failed in play twice,
+    ///     and the second failure removes the explanation the first one was given.
+    ///     </para>
+    ///
+    ///     <para>
+    ///     The first failure was blamed on the integer integrators - 2.18 M of 2.46 M scaled calls
+    ///     carried a remainder - so the mode was narrowed to the four float kernels, where the
+    ///     arithmetic is exact and int_carried measured 0 over 644,650 calls. It failed anyway, and
+    ///     worse. Whole effects stopped appearing: the save sphere's orb, a campfire, the teleport
+    ///     effect at the end of the Gagazet cave. The teleport is the one that matters, because it
+    ///     is not a rendering symptom - the event script never continued, so the player vanished
+    ///     and was never moved. FFX scripts wait on effects, so an effect that never starts or
+    ///     never reports itself finished stalls the scene. Toggling this flag off and restarting
+    ///     restored all four, with nothing else changed.
+    ///     </para>
+    ///
+    ///     <para>
+    ///     So the defect is not arithmetic precision. Something about writing a scaled value back
+    ///     into the integrated slot breaks the program flow that reads it - most likely because
+    ///     these slots are shared: a keyframe kernel writes the rate slot that a Move kernel
+    ///     integrates, and other steps read the integrated slot in the same pass. Halving what one
+    ///     kernel contributed is not the same as halving the timestep, and the difference reaches
+    ///     whatever else consumes that slot.
+    ///     </para>
+    ///
+    ///     <para>
+    ///     Reviving it needs a narrower experiment than this flag offers: one kernel at a time,
+    ///     against a scene whose effects are known to be visible, watching for an effect that fails
+    ///     to appear rather than for a rate. Until then the hold is the correct behaviour and
+    ///     particle position and scale stay at 30 Hz inside a 60 Hz image.
+    ///     </para>
     /// </summary>
     public bool ParticleIntegratorScale { get; init; }
 
