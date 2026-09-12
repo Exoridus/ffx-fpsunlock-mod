@@ -39,9 +39,50 @@ public unsafe sealed partial class FpsUnlockModule
     {
         if (!_config.VideoOverride || _overrides.Count == 0) return true;
 
+        foreach ((string key, string file) in _overrides)
+        {
+            if (key.EndsWith(".webm", StringComparison.OrdinalIgnoreCase))
+                warn_unless_vp8(key, file);
+        }
+
         return hook_or_log("PhyFMVPlayerManager play start", EngineAddresses.FmvPlayStart,
             () => new FhMethodHandle<d_fmv_play_start>(new FhMethodLocation(EngineAddresses.FmvPlayStart, 0))
                 .hook(this, h_fmv_play_start));
+    }
+
+    /// <summary>
+    ///     Warns about a replacement the player will silently refuse. Every one of the 95 shipped
+    ///     FMVs is VP8, and a VP8 replacement plays while a VP9 one produces no picture, no error
+    ///     and no failed open - the file is read and nothing happens, which costs a run to diagnose
+    ///     and looks exactly like a broken override.
+    ///
+    ///     The test is the Matroska CodecID, which is a plain ASCII string in the track header near
+    ///     the front of the file. Read rather than parsed: a full EBML walk buys nothing here, and
+    ///     anything unreadable is passed over rather than reported, because this is advice and not
+    ///     a gate.
+    /// </summary>
+    private void warn_unless_vp8(string key, string file)
+    {
+        try
+        {
+            byte[] head = new byte[4096];
+            int read;
+
+            using (FileStream stream = File.OpenRead(file))
+                read = stream.ReadAtLeast(head, head.Length, throwOnEndOfStream: false);
+
+            string text = System.Text.Encoding.ASCII.GetString(head, 0, read);
+
+            if (text.Contains("V_VP8", StringComparison.Ordinal)) return;
+
+            string codec = text.Contains("V_VP9", StringComparison.Ordinal) ? "VP9" : "not VP8";
+
+            _logger.Info($"[FpsUnlock] Override {key} is {codec}. The player decodes VP8 only and will show nothing, without an error.");
+        }
+        catch
+        {
+            // Advice only. A file that cannot be read here is still worth handing to the engine.
+        }
     }
 
     /* Measured thiscall: the manager arrives in ecx and the one argument on the stack. */
