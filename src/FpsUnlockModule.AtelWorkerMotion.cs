@@ -140,6 +140,7 @@ public unsafe sealed partial class FpsUnlockModule
     private long _atel_movie_progress;
     private long _atel_integrator_calls;
     private long _atel_integrator_scaled;
+    private long _atel_gravity_sets;
 
     /// <summary>
     ///     Why the integrator declined a worker, and with which bind kind and script type.
@@ -161,6 +162,7 @@ public unsafe sealed partial class FpsUnlockModule
     private string atel_worker_motion_counts()
         => $"atelwrk={_atel_rate_sets}/{_atel_deadline_sets}/{_atel_reads}/{_atel_progress_rewrites}/" +
            $"{_atel_movie_progress} atelpos={_atel_integrator_calls}/{_atel_integrator_scaled}" +
+           $" atelgrav={_atel_gravity_sets}" +
            atel_declined_counts();
 
     /// <summary>
@@ -283,6 +285,28 @@ public unsafe sealed partial class FpsUnlockModule
             ok &= hook_or_log("ATEL rotation record reader", EngineAddresses.AtelRotRecordRead,
                 () => new FhMethodHandle<d_atel_worker_pass>(new FhMethodLocation(EngineAddresses.AtelRotRecordRead, 0))
                     .hook(this, h_atel_rot_read));
+        }
+
+        // Same shape as the all-levels rate setters - two arguments, the level read out of
+        // worker+0x32 - and the same correction, because the field is added once per call.
+        if (_config.AtelWorkerGravity)
+        {
+            nint grav_rva = EngineAddresses.AtelSetMoveGravity;
+            d_atel_rate_all? grav_self = null;
+            grav_self = (worker, g) =>
+            {
+                _atel_gravity_sets++;
+                float scale = Scale;
+
+                new FhMethodHandle<d_atel_rate_all>(new FhMethodLocation(grav_rva, 0))
+                    .chain_from(grav_self!).fnptr!(worker, scale == 1f ? g : g / scale);
+            };
+
+            _atel_setter_hooks.Add(grav_self);
+
+            d_atel_rate_all grav_hook = grav_self;
+            ok &= hook_or_log("setGravity [0094h]", grav_rva,
+                () => new FhMethodHandle<d_atel_rate_all>(new FhMethodLocation(grav_rva, 0)).hook(this, grav_hook));
         }
 
         if (_config.AtelWorkerTranslation)

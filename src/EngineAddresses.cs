@@ -261,6 +261,19 @@ public static class EngineAddresses
     /// <summary>ATEL setPitchTurnStepAllLevels [006Eh] -> move+0x40 on all nine levels. Cdecl.</summary>
     public const nint AtelSetPitchTurnStepAllLevels = 0x46F100;
 
+    /// <summary>
+    ///     ATEL setGravity [0094h] -> move+0x34, the per-call velocity increment, on the calling
+    ///     thread's own priority level. Cdecl, two arguments like the all-levels rate setters: it
+    ///     reads the level out of worker+0x32 rather than taking it.
+    ///
+    ///     The move reader adds this field to the velocity once per call with no delta term, and the
+    ///     same field is the brake in min(v + g, sqrt(2 g d)) and the energy term behind it, so it is
+    ///     a per-call rate in exactly the sense the twelve turning setters are. It is the acceleration
+    ///     of every script-thrown object: the five in-match blitzball scripts each play
+    ///     setGravityMode(Swimming), setGravity(10), the arc, then setGravityMode(None).
+    /// </summary>
+    public const nint AtelSetMoveGravity = 0x46EFD0;
+
     /// <summary>ATEL setYawTurnStep [002Bh] -> move+0x3c on one level. Cdecl, three arguments.</summary>
     public const nint AtelSetYawTurnStep = 0x4714C0;
 

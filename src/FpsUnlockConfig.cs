@@ -594,6 +594,23 @@ public sealed record FpsUnlockConfig
     public bool AtelWorkerMotion { get; init; } = true;
 
     /// <summary>
+    ///     Divide the script's per-call gravity by the scale, so a thrown object keeps its authored
+    ///     arc instead of accelerating twice as fast.
+    ///
+    ///     setGravity [0094h] writes move+0x34 and the move reader adds it to the velocity once per
+    ///     call with no delta term, which puts it in the same class as the twelve turning rates this
+    ///     module already divides - it was simply not in that list. Halving it is exact rather than
+    ///     approximate in both places the field is read: the increment keeps the velocity curve
+    ///     against wall time, and the brake sqrt(2 g d) is the same curve's energy form, so the two
+    ///     stay consistent. The speed cap at move+0x10 must not be scaled and is not.
+    ///
+    ///     Its own switch rather than part of AtelWorkerMotion because it is the one member of that
+    ///     class that moves an object through space rather than turning it, so it is the one whose
+    ///     effect has to be separable from the rest.
+    /// </summary>
+    public bool AtelWorkerGravity { get; init; } = true;
+
+    /// <summary>
     ///     Correct the position integrator of the ATEL workers that are not bound to a Ch
     ///     character: the field and event camera, and every map group or map part a script
     ///     attaches. It adds the worker's speed along its facing to its position once per call with
