@@ -40,6 +40,16 @@ public unsafe sealed partial class FpsUnlockModule
     private int _move_lead_in;
 
     /// <summary>
+    ///     The last value that was worth a log line.
+    ///
+    ///     10 * Scale is sensitive to a measurement that has not settled: the first seconds of a run
+    ///     measured 54.1 fps and the patch wrote 18, then 17, a line per telemetry sample. Rewriting
+    ///     is correct - the value should track the rate, and the journal restores the earliest
+    ///     original because it unwinds in reverse - but a pass either way is not news.
+    /// </summary>
+    private int _move_lead_in_logged;
+
+    /// <summary>
     ///     Called once per presented frame from <c>apply_rate_patches</c>, and a compare and a return
     ///     unless the threshold it derives has changed.
     /// </summary>
@@ -80,6 +90,10 @@ public unsafe sealed partial class FpsUnlockModule
         }
 
         _patches.Write(EngineAddresses.AtelMoveLeadInLoad + MoveLeadInImmediateOffset, [(byte)passes]);
-        _logger.Info($"[FpsUnlock] Move lead-in set to {passes} passes, from 10.");
+
+        if (Math.Abs(passes - _move_lead_in_logged) < 2) return;
+
+        _move_lead_in_logged = passes;
+        _logger.Info($"[FpsUnlock] Move lead-in set to {passes} passes, from {VanillaMoveLeadIn}.");
     }
 }
