@@ -392,8 +392,35 @@ public sealed record FpsUnlockConfig
     ///     a particle vanishing instead of fading out, or appearing at full opacity instead of
     ///     fading in. Scaling the delta gives the same wall-clock rate with a valid value on every
     ///     frame.
+    ///
+    ///     Applies to the four kernels that integrate floats - pppMove, pppAccele, pppSclMove and
+    ///     pppSclAccele, so position and scale. Those are exact at any rate. The four that integrate
+    ///     integers need <see cref="ParticleIntegratorScaleIntegers"/> as well, because they are not.
+    ///
+    ///     The kernels are hooked in FFX.exe by RVA and a magic overlay's own program table holds
+    ///     thunks into them, so this reaches battle and magic effects as well as field particles.
     /// </summary>
     public bool ParticleIntegratorScale { get; init; }
+
+    /// <summary>
+    ///     Extend <see cref="ParticleIntegratorScale"/> to the four integer integrators: pppAngMove
+    ///     and pppAngAccele on 32-bit binary angles, pppColMove and pppColAccele on 16-bit colour.
+    ///     Without this they stay on the hold, which is the default.
+    ///
+    ///     They are separate because the arithmetic is not exact for them and cannot be made so
+    ///     from outside. A delta of 5 halved is 2.5, which the field cannot hold, so the remainder
+    ///     is alternated by frame instead - two consecutive frames then add what one vanilla frame
+    ///     added. That is exact at Scale 2, where the only possible remainder is one half, and only
+    ///     there: at Scale 4 a delta of 6 wants 1.5 per call and the alternation delivers 1.25,
+    ///     because a single per-frame flag can carry one remainder and these need three. Carrying
+    ///     them properly needs a residual per object and per slot, and a particle object is
+    ///     recycled heap with nowhere to keep one.
+    ///
+    ///     Colour is also where the visible risk is: it drives alpha, so a rounding that lands
+    ///     wrong is a particle that is too bright or invisible rather than one that is slightly
+    ///     mispositioned.
+    /// </summary>
+    public bool ParticleIntegratorScaleIntegers { get; init; }
 
     /// <summary>
     ///     Overwrite the hardcoded 29.97 the video update loop multiplies its time step by

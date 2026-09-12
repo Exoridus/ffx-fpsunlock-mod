@@ -74,6 +74,7 @@ public unsafe sealed partial class FpsUnlockModule
     }
 
     private int _timeline_step;
+    private bool _timeline_divisor_refused;
 
     /// <summary>
     ///     Called once per presented frame from <c>apply_rate_patches</c>, and a compare and a return
@@ -104,6 +105,30 @@ public unsafe sealed partial class FpsUnlockModule
         // loses its program: pyreflies that stop at whatever size their last reached keyframe left
         // them at, and a fire that burns at the right speed and looks wrong.
         int divisor = Math.Max(1, (int)Math.Round(Scale));
+
+        // A divisor that does not divide the vanilla step exactly is the failure the paragraph above
+        // describes, and rounding the rate to a whole multiple of 30 does not prevent it: 90 Hz
+        // rounds to 3, and 0x1000 / 3 is 1365, whose multiples reach 4095 and then step past 4096.
+        // Every keyframe would be missed from the first loop onwards. Refusing is the only correct
+        // answer, because there is no third step that both divides 0x1000 and matches the rate.
+        if (VanillaAgeStep % divisor != 0)
+        {
+            // Reported once: this is decided per frame and the rate does not change back on its own.
+            // A step already written stays written - it is a valid one, and the alternative is
+            // leaving the timeline patched with nothing at all.
+            if (!_timeline_divisor_refused)
+            {
+                _timeline_divisor_refused = true;
+                _logger.Error($"[FpsUnlock] Particle timeline not retimed: a scale of {Scale:F2} asks for an age step " +
+                              $"of {VanillaAgeStep}/{divisor}, which does not divide the authored 0x{VanillaAgeStep:X} " +
+                              $"exactly. Keyframes fire on equality, so a step off that grid would stop every particle " +
+                              $"program at whatever value its last reached keyframe left. Particles keep the authored " +
+                              $"step and run fast instead, which is wrong but not broken.");
+            }
+
+            return;
+        }
+
         int step = VanillaAgeStep / divisor;
 
         if (step == _timeline_step) return;

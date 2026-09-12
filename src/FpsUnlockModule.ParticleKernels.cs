@@ -216,7 +216,11 @@ public unsafe sealed partial class FpsUnlockModule
 
             // An integrator is retimed by scaling what it adds rather than by skipping it, which is
             // the same rate with a valid value on every frame. It then never takes the hold path.
+            // Only the float integrators by default: their halved delta is exact, the integer ones
+            // alternate a remainder that is only correct at Scale 2 and drive alpha where a wrong
+            // rounding is visible rather than merely imprecise.
             IntegratorWidth? width = _config.ParticleIntegratorScale ? integrator_width(name) : null;
+            if (width is not IntegratorWidth.Float32 && !_config.ParticleIntegratorScaleIntegers) width = null;
             if (width is not null) hold = false;
 
             d_ke_update? self = null;
