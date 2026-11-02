@@ -12,6 +12,8 @@ namespace Fahrenheit.Mods.Vrr
 {
     public unsafe sealed partial class VrrModule
     {
+        internal bool _nativeFieldProbeEnabled;
+        private void native_field_trace_present(int result, uint interval, uint flags, nint swapchain) { }
         [ThreadStatic] private static bool _inside_present;
         private readonly object _presenter_lock = new();
         private readonly Dictionary<nint, DxgiSwapchainState> _presenter_chains = [];
@@ -49,6 +51,18 @@ namespace Fahrenheit.Mods.Vrr
 [Collection("Texture hooks")]
 public unsafe sealed class PresentHookTests
 {
+    [Fact]
+    public void Native_field_present_does_not_run_a_second_pacer()
+    {
+        using var fixture = new Fixture();
+        fixture.Module._nativeFieldProbeEnabled = true;
+        int calls = 0;
+        fixture.Module.Pace = () => calls++;
+        fixture.Present();
+        Assert.Equal(0, calls);
+        Assert.Equal(1, _native);
+    }
+
     private static int _native, _binds, _adds, _releases;
     private static uint _interval, _flags;
     private const nint Target = 0x70ff;

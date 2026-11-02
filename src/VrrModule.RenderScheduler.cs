@@ -37,6 +37,7 @@ public unsafe sealed partial class VrrModule
         get
         {
             int maximum = VrrConfig.NormalizeMaxFramerate(_max_framerate.get());
+            if (_nativeFieldProbeEnabled) return 60;
             // Native movie playback retains its verified media-clock owner.
             return fmv_playing() || EngineSyncPaced || !_render_frame_enabled
                 ? maximum == 0 ? 60 : Math.Min(60, maximum) : maximum;
@@ -47,8 +48,8 @@ public unsafe sealed partial class VrrModule
     {
         if (!IndependentPresentationEnabled) return true;
         if (!init_particle_presentation()) return false;
-        _simulationClock = new FixedSimulationClock((int)TargetFramerate);
-        if (!_config.VBlankRate || !_config.CharacterDelta || !_config.ParticleTimeline)
+        _simulationClock = _nativeFieldProbeEnabled ? new FixedSimulationClock(_nativeFieldStepSeconds) : new FixedSimulationClock((int)TargetFramerate);
+        if (!_config.VBlankRate || (!_nativeFieldProbeEnabled && !_config.CharacterDelta) || !_config.ParticleTimeline)
         {
             _logger.Error("[Vrr] Independent presentation requires the existing vblank, character and particle-timeline corrections.");
             return false;
@@ -75,7 +76,10 @@ public unsafe sealed partial class VrrModule
     private string _render_gate_reason()
         => _presentationAdmission.Failure ?? (_render_clock_bootstrap ? "simulation_clock_bootstrap" : EngineSyncPaced ? "syncdata" : fmv_playing() ? "movie"
             : NativeRenderValidationEnabled && _diagnostics?.IsCapturing != true ? "native_validation_capture_inactive"
-            : IndependentPresentationEnabled && !cooperative_ticks_ready() ? "cooperative_ticks_unready"
+            : _nativeFieldProbeEnabled && _diagnostics?.IsCapturing != true ? "native_field_capture_inactive"
+            : _nativeFieldProbeEnabled && !_nativeFieldHostBound ? "native_field_host_unbound"
+            : _nativeFieldProbeEnabled && !native_field_environment_ready() ? "native_field_environment_unready"
+            : IndependentPresentationEnabled && !_nativeFieldProbeEnabled && !cooperative_ticks_ready() ? "cooperative_ticks_unready"
             : !pad_observation_binding_ready() ? "pad_observer_not_installed"
             : !pad_input_presentation_ready() ? "pad_history_not_installed"
             : pad_native_input_owner() ? "native_input_owner"
@@ -88,7 +92,8 @@ public unsafe sealed partial class VrrModule
 
     private bool render_scheduler_frame_eligible(bool allowNativeInputOwner = false)
         => _presentationAdmission.Failure is null && (!NativeRenderValidationEnabled || _diagnostics?.IsCapturing == true)
-            && cooperative_ticks_ready() && render_image_admission_ready()
+            && (!_nativeFieldProbeEnabled || _diagnostics?.IsCapturing == true)
+            && (_nativeFieldProbeEnabled ? _nativeFieldHostBound && native_field_environment_ready() : cooperative_ticks_ready()) && render_image_admission_ready()
             && pad_observation_binding_ready() && pad_input_presentation_ready() && (allowNativeInputOwner || !pad_native_input_owner())
             && field_particle_presentation_ready() && !filter_needs_native_clock();
 
@@ -157,6 +162,7 @@ public unsafe sealed partial class VrrModule
         render_actors_restore();
         viewport_snapshot();
         party_swap_collect();
+        if (_nativeFieldProbeEnabled) native_field_prepare_pass();
     }
 
     private void render_scheduler_exit_loop(bool nativeReturned = true)
@@ -178,14 +184,14 @@ public unsafe sealed partial class VrrModule
         _render_particle_pause_before = null;
         double? tickDeadlineSeconds = nativeReturned ? render_simulation_tick_deadline() : null;
         object? padTickCorrelation = nativeReturned ? pad_observations_pass_completed(tickDeadlineSeconds) : null;
-        if (nativeReturned && _render_clock_seen && _render_simulation_pass)
+        if (nativeReturned && _render_clock_seen && _render_simulation_pass && (!_nativeFieldProbeEnabled || _padSnapshotExecPositive))
         {
             _simulation_ticks++;
             if (_render_steps_remaining > 0) _render_steps_remaining--;
             render_camera_complete_simulation();
             render_actors_complete_simulation();
         }
-        else if (nativeReturned && _render_clock_seen) _additional_images++;
+        else if (nativeReturned && _render_clock_seen && !_render_simulation_pass) _additional_images++;
         diagnostic_event("render_pass", new { simulation = _render_simulation_pass, clock_seen = _render_clock_seen,
             remaining = _render_steps_remaining, alpha = _render_plan.Alpha, simulation_ticks = _simulation_ticks,
             additional_images = _additional_images, discarded_steps = _simulation_debt_dropped,
@@ -195,6 +201,7 @@ public unsafe sealed partial class VrrModule
         RenderPassContext.IsPresentation = false;
         battle_effects_end_pass();
         _render_inside_loop = false;
+        _nativeFieldPassFrozen = false;
     }
 
     private double? render_simulation_tick_deadline()
@@ -206,6 +213,7 @@ public unsafe sealed partial class VrrModule
     private RenderClockAction render_scheduler_clock(float nativeDelta)
     {
         if (!IsOwnedRenderLoop) return RenderClockAction.Native;
+        if (_nativeFieldProbeEnabled) return native_field_clock(nativeDelta);
         bool unmappedNativeFallback = false;
         _render_clock_seen = true;
         double speed = _render_input_delta > 0 && float.IsFinite(nativeDelta) ? nativeDelta / _render_input_delta : 1;

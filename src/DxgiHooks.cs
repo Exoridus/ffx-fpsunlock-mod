@@ -90,7 +90,7 @@ public unsafe sealed partial class VrrModule
             bool owned = _owner.device_lock_owned_once();
             bool released = owned && state.Multithreaded && _owner.device_lock_release();
             long paceStart = Stopwatch.GetTimestamp();
-            if (state.Lifecycle.Active && (flags & 1) == 0) _owner.presenter_pace(state.Pacer);
+            if (state.Lifecycle.Active && (flags & 1) == 0 && !_owner._nativeFieldProbeEnabled) _owner.presenter_pace(state.Pacer);
             long callStart = Stopwatch.GetTimestamp();
             ID3D11RenderTargetView** targets = stackalloc ID3D11RenderTargetView*[8];
             ID3D11DepthStencilView* depth = (ID3D11DepthStencilView*)state.Bindings.Depth;
@@ -127,6 +127,7 @@ public unsafe sealed partial class VrrModule
             }
             _owner.present_telemetry(callStart - paceStart, timestamp - callStart, owned && !released, released);
             _owner.diagnostic_present(result, args.Interval, args.Flags, (nint)swapchain, timestamp);
+            _owner.native_field_trace_present(result, args.Interval, args.Flags, (nint)swapchain);
             state.Lifecycle.CompletePresent(result, args.Flags, timestamp);
             Interlocked.Increment(ref _owner._present_attempts);
             if (result == 0 && (args.Flags & 1) == 0)

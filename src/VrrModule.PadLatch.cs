@@ -225,6 +225,7 @@ public unsafe sealed partial class VrrModule
 
     private void pad_latch_original()
     {
+        if (native_field_additional_pass()) native_field_abort("native_field_input_publication_refused");
         lock (_padObservationGate)
         {
             if (_padPublicationDepth == 0 && _padReplayLoan is not null)
@@ -249,6 +250,12 @@ public unsafe sealed partial class VrrModule
         }
 
         _pad_latch_calls++;
+        if (native_field_additional_pass())
+        {
+            if (pad_native_input_owner()) native_field_abort("native_field_late_input_owner");
+            _pad_latch_skipped++;
+            return;
+        }
         if (!_pad_latch_installed || !OwnsRenderPass || pad_native_input_owner())
         {
             pad_latch_original();
@@ -279,6 +286,7 @@ public unsafe sealed partial class VrrModule
         if (!_pad_latch_pending) return;
         _pad_latch_pending = false;
         _pad_latch_late++;
+        if (native_field_additional_pass()) native_field_abort("native_field_deferred_publication_refused");
         pad_latch_original();
     }
 

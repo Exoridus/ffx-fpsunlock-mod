@@ -120,6 +120,9 @@ public unsafe sealed partial class VrrModule
     internal Action<string, object>? ActorDiagnostic;
     internal bool ActorProbeRequested => ActorObservationRequested;
     internal long ActorDrawBlends => _renderActorBlends;
+    internal long ActorDrawCaptures => _renderActorCaptures;
+    internal float ActorDrawCameraAlpha => _renderCameraAlpha;
+    internal void DisableActorInterpolation(bool disabled) => _renderActorInterpolationDisabled = disabled;
     internal int ActorDrawTracked => _renderActorStates.Count;
     internal long ActorDrawSkipped => _renderActorSkipped;
     internal bool ActorDrawInitialize() => init_render_actors();

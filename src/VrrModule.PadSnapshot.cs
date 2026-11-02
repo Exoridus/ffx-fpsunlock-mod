@@ -205,6 +205,10 @@ public unsafe sealed partial class VrrModule
 
     private void pad_snapshot_invoke(nuint returnAddress, d_render_void original)
     {
+        if (_nativeFieldProbeEnabled && native_field_additional_pass()
+            && (returnAddress != (nuint)FhUtil.ptr_at<byte>(PadSnapshotContinuation)
+                || !pad_snapshot_presentation_ready() || _padSnapshotLoopDepth != 1 || !_padSnapshotClockCompleted))
+            native_field_abort("native_field_snapshot_hold_lost");
         if (_padReplayLoan is not null) pad_replay_before_snapshot();
         bool owner = false, tracked = false;
         lock (_padSnapshotGate)
@@ -246,6 +250,8 @@ public unsafe sealed partial class VrrModule
                     _presentationAdmission.Refuse("pad_snapshot_presentation_forwarded");
             }
         }
+        if (_nativeFieldProbeEnabled && native_field_additional_pass())
+            native_field_abort("native_field_snapshot_forwarding_refused");
         bool returned = false;
         try { original(); returned = true; }
         finally

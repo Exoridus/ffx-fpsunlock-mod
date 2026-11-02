@@ -88,6 +88,7 @@ public sealed class DiagnosticLoopTimingTests : IDisposable
         else module.CallDiagnosticLoop(0.125f);
         Assert.Equal(1, calls);
         Assert.Empty(module.DiagnosticEvents);
+        Assert.Empty(module.AdditionalMemorySamples);
         Assert.Equal(0, module.CurrentDiagnosticLoop);
     }
 }
@@ -109,6 +110,8 @@ public unsafe sealed partial class VrrModule
             () => (rva != 0x489050 || !RejectPadObservationHook) && install());
     }
     private void diagnostic_raw(byte channel, float value) { }
+    internal readonly List<string> AdditionalMemorySamples = [];
+    private void diagnostic_memory(bool after) => AdditionalMemorySamples.Add(after ? "after" : "before");
     internal void CaptureLoops(bool capturing) => _diagnostics = new() { IsCapturing = capturing };
     internal void CallDiagnosticLoop(float delta) => h_diag_loop(delta);
     internal long CurrentDiagnosticLoop => _diagnosticLoopId;

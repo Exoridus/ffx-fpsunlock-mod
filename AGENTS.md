@@ -72,9 +72,10 @@ code in the project and write reusable engine results as findings.
 ## Hard rules
 
 - FFX only (`FhGameId.FFX`). FFX-2 is out of scope.
-- No 30 FPS fallback, ever. Alternate-frame updates and frameskipping are
-  workarounds, not acceptable end states. A subsystem that is not correct at
-  60 Hz is logged or disabled through config, never hidden.
+- The product direction extends the proven corrected60/high-FPS baseline toward
+  variable independent presentation and general Fahrenheit phases. Native-time
+  field presentation remains an isolated experiment. Additional images must not
+  advance gameplay or replay historical input. Source tests do not qualify native output.
 - Original game files stay byte-identical. Code patches are in-process only and
   go through `PatchJournal` so shutdown restores the image.
 - Fahrenheit is the only hook and file-loader owner.

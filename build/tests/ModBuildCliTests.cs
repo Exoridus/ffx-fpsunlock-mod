@@ -5,6 +5,7 @@ public sealed class ModBuildCliTests
 {
     [Theory]
     [InlineData("mod-build")]
+    [InlineData("mod-field-pack")]
     [InlineData("mod-verify")]
     [InlineData("mod-pack")]
     public async Task RejectsFullDistributionBeforeReadingProjectOrStartingBuild(string command)

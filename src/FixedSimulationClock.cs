@@ -2,11 +2,21 @@ namespace Fahrenheit.Mods.Vrr;
 
 public readonly record struct SimulationFramePlan(int Steps, float Alpha, bool Reset, int DroppedSteps);
 
-public sealed class FixedSimulationClock(int frequency = 60)
+public sealed class FixedSimulationClock
 {
     public static uint ResolveExec(uint native, bool presentation) => presentation || native == 0 ? 0u : 1u;
-    private readonly double _stepSeconds = frequency is 30 or 60 or 120
-        ? 1d / frequency : throw new ArgumentOutOfRangeException(nameof(frequency));
+    private readonly double _stepSeconds;
+
+    public FixedSimulationClock(int frequency = 60)
+        : this(frequency is 30 or 60 or 120 ? 1d / frequency : throw new ArgumentOutOfRangeException(nameof(frequency))) { }
+
+    /// <summary>Uses a simulation step duration in seconds, independent of presentation frequency.</summary>
+    public FixedSimulationClock(double stepSeconds)
+    {
+        if (!double.IsFinite(stepSeconds) || stepSeconds < MaximumGapSeconds * 8 / (int.MaxValue - 1d))
+            throw new ArgumentOutOfRangeException(nameof(stepSeconds));
+        _stepSeconds = stepSeconds;
+    }
     // The engine's own catch-up (FUN_00821f90) clamps a frame's elapsed time to 0.3 s and then runs
     // every pass that time covers. Dropping more than that made each loading hitch lengthen every
     // tick-counted wait by the hitch, which is why scene transitions took seconds longer than native.

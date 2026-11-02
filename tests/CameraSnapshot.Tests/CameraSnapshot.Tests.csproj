@@ -15,6 +15,7 @@
     <Compile Include="../../src/RenderCameraHistory.cs" />
     <Compile Include="../../src/VrrModule.PadSnapshot.cs" />
     <Compile Include="../../src/VrrModule.RenderScheduler.cs" />
+    <Compile Include="../../src/VrrModule.NativeFieldScheduler.cs" />
     <Compile Include="../../src/VrrModule.SimulationPass.cs" />
     <Compile Include="../../src/FixedSimulationClock.cs" />
     <Compile Include="../../src/RenderPassContext.cs" />

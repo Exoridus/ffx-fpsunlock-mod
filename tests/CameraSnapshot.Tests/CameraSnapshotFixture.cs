@@ -11,6 +11,10 @@ namespace Fahrenheit.Mods.Vrr;
 
 public unsafe sealed partial class VrrModule
 {
+    private bool native_field_environment_ready() => !NativeOwner;
+    private uint VSyncInterval { get; set; }
+    private void native_field_trace_camera(int viewport, Matrix4x4 canonical, Matrix4x4 rendered) { }
+    private void native_field_abort(string reason) => throw new InvalidOperationException(reason);
     public VrrModule()
     {
         // Synthetic fixture activation does not qualify native startup.
@@ -22,13 +26,13 @@ public unsafe sealed partial class VrrModule
     internal void StopSyntheticRuntimeForTest() => _startupActivation.Stop();
 
 
-    private readonly VrrConfig _config = new();
+    private VrrConfig _config = new();
     private readonly TestLogger _logger = new();
     private readonly TestSetting _max_framerate = new();
     private bool IndependentPresentationEnabled => true;
     private bool EngineSyncPaced => NativeOwner;
-    private float TargetFramerate => 60;
-    private float Scale => 2;
+    private float TargetFramerate => _config.NativeFieldProbe ? 30 : 60;
+    private float Scale => _config.NativeFieldProbe ? 1 : 2;
     private bool _fieldPauseInstalled = true, _filter_presentation_hold = true;
     private string _qualificationRefusal = "";
     private TestDiagnostics? _diagnostics = null;
@@ -42,6 +46,15 @@ public unsafe sealed partial class VrrModule
     internal bool Presentation => RenderPassContext.IsPresentation;
     internal string? Failure => _presentationAdmission.Failure;
 
+    internal void UseNativeField()
+    {
+        _config = VrrConfig.ForNativeFieldProbe();
+        _nativeFieldStepSeconds = 0.03336666666666667;
+        _simulationClock = new FixedSimulationClock(_nativeFieldStepSeconds);
+        _nativeFieldHostBound = _nativeFieldHostOrderVerified = true;
+        _diagnostics = new TestDiagnostics();
+    }
+
     internal void BindSyntheticCamera()
     {
         _renderCameraView = CameraNative.View;
@@ -54,7 +67,7 @@ public unsafe sealed partial class VrrModule
         _padSnapshotInstalled = true;
     }
 
-    internal void Pass(double now, Action body)
+    internal void Pass(double now, Action body, float? nativeDelta = null)
     {
         render_scheduler_begin_frame();
         _render_now = now;
@@ -62,8 +75,11 @@ public unsafe sealed partial class VrrModule
         bool successful = false;
         try
         {
-            render_scheduler_enter_loop(1f / 60);
-            h_advance_vblank(1f / 60);
+            float delta = nativeDelta ?? 1 / TargetFramerate;
+            render_scheduler_enter_loop(delta);
+            delta = native_field_loop_delta(delta);
+            if (_config.NativeFieldProbe) native_field_host_classify(delta);
+            h_advance_vblank(delta);
             body();
             h_render_exec();
             render_scheduler_exit_loop();
@@ -130,7 +146,7 @@ public unsafe sealed partial class VrrModule
     private bool fx_call_is(nint rva, nint target) => rva == 0x420df0 && target == 0x42d070;
     private bool hook_or_log(HookSiteId site, string name, nint target, Func<bool> install) => register_hook(site, name, target, install);
     private sealed class TestSetting { internal int get() => 120; }
-    private sealed class TestDiagnostics { internal bool IsCapturing => false; }
+    private sealed class TestDiagnostics { internal bool IsCapturing => true; }
     private sealed class TestLogger
     {
         internal void Error(string message) { }

@@ -131,7 +131,11 @@ public unsafe sealed partial class VrrModule
         if (_renderCameraSampling) _renderCameraHistory.Capture(viewport, sample);
         // Viewport 1 has special projection/view commit paths that must retain native ownership.
         if ((source == 1 && viewport == 1)
-            || !_renderCameraHistory.TryInterpolate(viewport, sample, _renderCameraAlpha, out var rendered)) return result;
+            || !_renderCameraHistory.TryInterpolate(viewport, sample, _renderCameraAlpha, out var rendered))
+        {
+            native_field_trace_camera(viewport, sample.View, sample.View);
+            return result;
+        }
 
         *(Matrix4x4*)_renderCameraView = rendered.View;
         _renderCameraWrite.Record(sample.View, rendered.View);
@@ -151,6 +155,7 @@ public unsafe sealed partial class VrrModule
             _renderCameraProjectionViewport = viewport;
         }
         else if (_renderCameraCommitted) commit_render_camera_view();
+        native_field_trace_camera(viewport, sample.View, rendered.View);
         return result;
     }
 

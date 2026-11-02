@@ -77,9 +77,12 @@ public unsafe sealed partial class VrrModule
         _diagnosticLoopId = System.Threading.Interlocked.Increment(ref _diagnosticLoopCounter);
         _load_passes++;
         PadSnapshotScope snapshotScope = pad_snapshot_enter_loop();
+        if (_nativeFieldProbeEnabled && (!snapshotScope.Owned || !snapshotScope.Root))
+            native_field_abort("native_field_nested_or_foreign_loop");
         long inputProbeScope = 0;
         long? nativeStart = null;
         bool nativeReturned = false;
+        bool sampleAdditionalMemory = false;
         bool successful = false;
         try
         {
@@ -87,10 +90,15 @@ public unsafe sealed partial class VrrModule
             cooperative_tick_enter_loop(snapshotScope);
             pad_replay_enter_loop(snapshotScope);
             if (snapshotScope.Owned) render_scheduler_enter_loop(delta);
+            float incomingDelta = delta;
+            delta = native_field_loop_delta(delta);
             diagnostic_raw(3, delta);
             bool measure = _diagnostics?.IsCapturing == true;
-            if (measure) diagnostic_event("loop_enter", new { delta_bits = BitConverter.SingleToInt32Bits(delta), view = diagnostic_view() });
+            if (measure) diagnostic_event("loop_enter", new { delta_bits = BitConverter.SingleToInt32Bits(delta),
+                incoming_delta_bits = BitConverter.SingleToInt32Bits(incomingDelta), view = diagnostic_view() });
             var original = new FhCallHandle<d_diag_loop>(new FhCallLocation(DiagnosticMainLoop, 0)).chain_from(h_diag_loop).fnptr!;
+            sampleAdditionalMemory = _nativeFieldProbeEnabled && _nativeFieldPassFrozen && !_render_simulation_pass;
+            if (sampleAdditionalMemory) diagnostic_memory(false);
             if (measure) nativeStart = Stopwatch.GetTimestamp();
             original(delta);
             nativeReturned = true;
@@ -100,6 +108,7 @@ public unsafe sealed partial class VrrModule
             long? nativeEnd = nativeStart.HasValue ? Stopwatch.GetTimestamp() : null;
             try
             {
+                if (sampleAdditionalMemory) diagnostic_memory(true);
                 if (!nativeReturned) cooperative_tick_clock_completed(false);
                 cooperative_tick_exit_loop(snapshotScope);
             }

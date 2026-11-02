@@ -8,6 +8,67 @@ public unsafe sealed class CameraSnapshotCompositionTests : IDisposable
     private const double Step = 1d / 60;
     public void Dispose() => CameraNative.Release();
 
+    [Fact]
+    public void Native_zero_delta_startup_can_enter_the_field_and_interpolate_without_another_game_tick()
+    {
+        const double nativeStep = 0.03336666666666667;
+        CameraNative.Reset();
+        CameraNative.Source(1);
+        var module = new VrrModule();
+        module.BindSyntheticCamera();
+        module.UseNativeField();
+        module.NativeOwner = true;
+        module.Pass(0, () => { module.Snapshot(); module.FinalizeCamera(); }, nativeDelta: 0);
+        Assert.Null(module.Failure);
+        module.NativeOwner = false;
+        module.Pass(.01, () => { module.Snapshot(); module.FinalizeCamera(); });
+        CameraNative.Pose(8, 1.2f);
+        module.Pass(.01 + nativeStep, () => { module.Snapshot(); module.FinalizeCamera(); });
+        module.RestoreCamera();
+        int snapshots = CameraNative.SnapshotCalls;
+        uint counter = FhUtil.get_at<uint>(EngineAddresses.SgVCount);
+        module.Pass(.01 + 1.5 * nativeStep, () =>
+        {
+            Assert.True(module.Presentation);
+            module.Snapshot();
+            Assert.True(module.Held);
+            module.FinalizeCamera();
+            Assert.Equal(-4f, CameraNative.OutputView.M41, 4);
+        });
+        Assert.Equal(snapshots, CameraNative.SnapshotCalls);
+        Assert.Equal(counter, FhUtil.get_at<uint>(EngineAddresses.SgVCount));
+        module.RestoreCamera();
+        Assert.Equal(CameraNative.CanonicalView, *(Matrix4x4*)CameraNative.View);
+    }
+
+    [Fact]
+    public void Native_field_half_step_changes_the_camera_without_publishing_another_snapshot()
+    {
+        const double nativeStep = 0.03336666666666667;
+        CameraNative.Reset();
+        CameraNative.Source(1);
+        var module = new VrrModule();
+        module.BindSyntheticCamera();
+        module.UseNativeField();
+        module.Pass(0, () => { module.Snapshot(); module.FinalizeCamera(); });
+        CameraNative.Pose(8, 1.2f);
+        module.Pass(nativeStep, () => { module.Snapshot(); module.FinalizeCamera(); });
+        module.RestoreCamera();
+        int snapshots = CameraNative.SnapshotCalls;
+        module.Pass(1.5 * nativeStep, () =>
+        {
+            Assert.True(module.Presentation);
+            module.Snapshot();
+            Assert.True(module.Held);
+            module.FinalizeCamera();
+            Assert.Equal(-4f, (*(Matrix4x4*)CameraNative.View).M41, 4);
+            Assert.Equal(-4f, CameraNative.OutputView.M41, 4);
+        });
+        Assert.Equal(snapshots, CameraNative.SnapshotCalls);
+        module.RestoreCamera();
+        Assert.Equal(CameraNative.CanonicalView, *(Matrix4x4*)CameraNative.View);
+    }
+
     private static VrrModule Seed(int source, int viewport = 0)
     {
         CameraNative.Reset();

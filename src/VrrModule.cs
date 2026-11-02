@@ -82,6 +82,9 @@ public unsafe sealed partial class VrrModule : FhModule
             return false;
         }
 
+        if (Environment.GetEnvironmentVariable("FFX_VRR_NATIVE_FIELD_REFERENCE") == "1")
+            return init_native_field_reference();
+
         string config_path = VrrConfig.ResolvePath();
         bool   config_found = File.Exists(config_path);
 
@@ -93,6 +96,8 @@ public unsafe sealed partial class VrrModule : FhModule
                 ? $"[Vrr] Config read from {config_path}."
                 : $"[Vrr] No config at {config_path} - every setting is at its default.");
         if (config_warning is not null) _logger.Warning($"[Vrr] Config at {config_path}: {config_warning}");
+        if (Environment.GetEnvironmentVariable("FFX_VRR_NATIVE_FIELD_PROBE") == "1")
+            _config = VrrConfig.ForNativeFieldProbe();
         _sync_aware = _config.SyncDataAware;
         if (!prepare_presentation_startup()) return false;
         _simulation_framerate = (float)(ChosenFramerate ?? 60d);
@@ -183,7 +188,7 @@ public unsafe sealed partial class VrrModule : FhModule
             ok &= init_lens_sprite_hook();
             ok &= init_particle_uv_hooks();
             ok &= init_cross_fade_hook();
-            if (IndependentPresentationEnabled)
+            if (IndependentPresentationEnabled && !_nativeFieldProbeEnabled)
             {
                 var participants = FhApi.Mods.get_modules().Select(context => (object)context.Module).ToArray();
                 ok &= bind_pad_input_policy(participants);
@@ -229,7 +234,7 @@ public unsafe sealed partial class VrrModule : FhModule
 
             apply_rate_patches();
             ok &= _hookRegistration?.RequiredRegistrationsComplete == true;
-            bool renderReady = ok && _render_scheduler_active && (!NativeRenderValidationEnabled || _diagnostics?.IsCapturing == true);
+            bool renderReady = ok && _render_scheduler_active && (!(NativeRenderValidationEnabled || _nativeFieldProbeEnabled) || _diagnostics?.IsCapturing == true);
             if (IndependentPresentationEnabled && !renderReady)
             {
                 _render_scheduler_active = false;
@@ -302,14 +307,21 @@ public unsafe sealed partial class VrrModule : FhModule
         _frames++;
         MemoryProbe.NextFrame();
         diagnostic_frame_begin();
+        if (_nativeFieldProbeEnabled && !_nativeFieldDividerObserved)
+        {
+            uint nativeDivider = VSyncInterval;
+            if (nativeDivider is 1 or 2) _nativeFieldNativeDivider = nativeDivider;
+            _nativeFieldDividerObserved = true;
+        }
         render_image_animation_begin(ptr_this);
         render_scheduler_begin_frame();
         trace_battle_state();
         load_telemetry_frame();
         // Unlocking the engine limiter is only valid while the render scheduler owns the clock; otherwise the
         // native clock would run faster than 60 Hz. Pacing then falls to PresentationTargetHz.
-        VSyncInterval = IndependentPresentationEnabled ? (_render_frame_enabled ? 0u : 1u) : VSyncIntervalTarget;
-        if (IndependentPresentationEnabled) presenter_pace(_frame_pacer);
+        VSyncInterval = IndependentPresentationEnabled ? (_render_frame_enabled ? 0u : _nativeFieldProbeEnabled ? _nativeFieldNativeDivider : 1u) : VSyncIntervalTarget;
+        if (IndependentPresentationEnabled && (!_nativeFieldProbeEnabled || _render_frame_enabled)) presenter_pace(_frame_pacer);
+        if (_nativeFieldProbeEnabled) _render_now = Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
         sample_present_rate();
         apply_rate_patches();
 
@@ -348,6 +360,13 @@ public unsafe sealed partial class VrrModule : FhModule
         {
             HookSites.Native(() => new FhCallHandle<d_set_vsync>(new FhCallLocation(EngineAddresses.SetFlipVSyncInterval, 0)).chain_from(h_set_vsync).fnptr)(interval);
             return;
+        }
+        if (_nativeFieldProbeEnabled)
+        {
+            _nativeFieldNativeDivider = interval;
+            _nativeFieldDividerObserved = true;
+            if (!_render_frame_enabled)
+                new FhCallHandle<d_set_vsync>(new FhCallLocation(EngineAddresses.SetFlipVSyncInterval, 0)).chain_from(h_set_vsync).fnptr!(interval);
         }
  }
 

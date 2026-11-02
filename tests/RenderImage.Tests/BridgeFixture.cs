@@ -12,6 +12,8 @@ namespace Fahrenheit.Mods.Vrr;
 
 public unsafe sealed partial class VrrModule
 {
+    private void native_field_trace_actor(long image, long simulation, long lifetime, nint instance,
+        float alpha, bool admitted, ReadOnlySpan<System.Numerics.Matrix4x4> canonical, ReadOnlySpan<System.Numerics.Matrix4x4> rendered) { }
     public VrrModule()
     {
         // Synthetic fixture activation does not qualify native startup.

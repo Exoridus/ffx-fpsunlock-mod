@@ -11,6 +11,7 @@ public unsafe sealed partial class VrrModule
 
     private bool prepare_presentation_startup()
     {
+        if (_nativeFieldProbeEnabled) return prepare_native_field_probe();
         _independentQualification = IndependentPresentationQualification.ReadEmbedded();
         NativeRenderValidationEnabled = _independentQualification.AllowsNativeValidation(
             Environment.GetEnvironmentVariable("FFX_VRR_RENDER_PROBE"), _config.VrrEnabled,

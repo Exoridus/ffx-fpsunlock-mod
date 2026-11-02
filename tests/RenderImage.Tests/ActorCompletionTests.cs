@@ -434,6 +434,53 @@ public unsafe sealed class ActorCompletionTests
         }
         finally { Environment.SetEnvironmentVariable("FFX_VRR_ACTOR_PROBE", prior); }
     }
+    [Fact]
+    public void Disabled_actor_interpolation_preserves_native_output_on_real_and_extra_images_and_keeps_history()
+    {
+        using var f = new ActorDrawFixture(); f.Construct();
+        f.Module.DisableActorInterpolation(true);
+        byte[] world = f.PersistentWorld, palette = f.PersistentPalette;
+        f.Begin(); f.Module.ActorDrawComplete(); f.Pose(0, 0); f.Draw();
+        f.Begin(); f.Module.ActorDrawComplete(); f.Pose(10, 20); f.Draw();
+        Assert.Equal(10, f.Root.Translation.X); Assert.Equal(20, f.Bone.Translation.X);
+        f.Begin(simulation: false, alpha: .25f); f.Draw();
+        Assert.Equal(10, f.Root.Translation.X); Assert.Equal(20, f.Bone.Translation.X);
+        Assert.Equal(2, f.Module.ActorDrawCaptures); Assert.Equal(0, f.Module.ActorDrawBlends);
+        Assert.Equal(world, f.PersistentWorld); Assert.Equal(palette, f.PersistentPalette);
+        f.Module.DisableActorInterpolation(false);
+        f.Begin(simulation: false, alpha: .25f); f.Draw();
+        Assert.Equal(2.5f, f.Root.Translation.X); Assert.Equal(5, f.Bone.Translation.X);
+    }
+
+    [Fact]
+    public void Disabled_actor_interpolation_cannot_copy_an_interpolated_same_image_cache()
+    {
+        using var f = Paired();
+        f.Begin(simulation: false, alpha: .25f); f.Pose(10, 20); f.Draw();
+        Assert.Equal(2.5f, f.Root.Translation.X);
+        f.Module.DisableActorInterpolation(true);
+        f.Draw();
+        Assert.Equal(10, f.Root.Translation.X); Assert.Equal(20, f.Bone.Translation.X);
+    }
+
+    [Fact]
+    public void Disabled_actor_interpolation_leaves_camera_alpha_image_and_simulation_context_unchanged()
+    {
+        using var f = Paired(); f.Module.DisableActorInterpolation(true);
+        long tick = RenderPassContext.SimulationSerial;
+        f.Begin(simulation: false, alpha: .25f);
+        long image = RenderPassContext.ImageSerial, epoch = RenderPassContext.HistoryEpoch;
+        RenderPassContext.SetPass(.25f, false);
+        int calls = ActorDrawNative.DrawCalls;
+        f.Pose(10, 20); f.Draw();
+        Assert.Equal(10, f.Root.Translation.X);
+        Assert.Equal(.25f, f.Module.ActorDrawCameraAlpha);
+        Assert.Equal(.25f, RenderPassContext.PresentationAlpha);
+        Assert.Equal(tick, RenderPassContext.SimulationSerial);
+        Assert.Equal(image, RenderPassContext.ImageSerial);
+        Assert.Equal(epoch, RenderPassContext.HistoryEpoch);
+        Assert.Equal(calls + 1, ActorDrawNative.DrawCalls);
+    }
     private static ActorDrawFixture Paired()
     {
         var f = new ActorDrawFixture();

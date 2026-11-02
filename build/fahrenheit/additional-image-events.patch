@@ -1,0 +1,41 @@
+diff --git a/src/core/events/game_loop/main_loop.cs b/src/core/events/game_loop/main_loop.cs
+index 8fe8617..f50f592 100644
+--- a/src/core/events/game_loop/main_loop.cs
++++ b/src/core/events/game_loop/main_loop.cs
+@@ -15,6 +15,17 @@ public readonly ref struct UpdateLoopEventArgs {
+ }
+ 
+ public partial class GameLoopEvents {
++    private readonly AdditionalImagePhase _additionalImagePhase = new();
++
++    /// <summary>Registers one timing owner during initialization. Only explicitly additional images suppress update events.</summary>
++    public bool TryBindAdditionalImageClassifier(object owner, Func<float, bool> classify) {
++        if (FhEnvironment.get_execution_state() != FhExecState.INIT)
++            throw new InvalidOperationException("The additional-image classifier must be bound during initialization.");
++        return _additionalImagePhase.TryBind(owner, classify);
++    }
++
++    internal bool IsAdditionalImage(float delta) => _additionalImagePhase.IsAdditionalImage(delta);
++
+     /// <summary>Raised before the game's main update loop.</summary>
+     public FhEvent<UpdateLoopEventArgs> PreUpdate = new();
+ 
+diff --git a/src/runtime/events/game_loop.cs b/src/runtime/events/game_loop.cs
+index 9e0eb2c..abdff23 100644
+--- a/src/runtime/events/game_loop.cs
++++ b/src/runtime/events/game_loop.cs
+@@ -26,11 +26,12 @@ public class GameLoopEventsImplModule : FhModule {
+     /// </summary>
+     [UnmanagedCallConv(CallConvs = [ typeof(CallConvCdecl) ] )]
+     private void raise_update_events(float delta) {
+-        FhApi.Events.Common.GameLoop.PreUpdate.invoke(new() { delta = delta });
++        bool additionalImage = FhApi.Events.Common.GameLoop.IsAdditionalImage(delta);
++        if (!additionalImage) FhApi.Events.Common.GameLoop.PreUpdate.invoke(new() { delta = delta });
+ 
+         FhCall.Sg_MainLoop.chain_from(raise_update_events).fnptr!(delta);
+ 
+-        FhApi.Events.Common.GameLoop.PostUpdate.invoke(new() { delta = delta });
++        if (!additionalImage) FhApi.Events.Common.GameLoop.PostUpdate.invoke(new() { delta = delta });
+     }
+ 
+     /// <summary>

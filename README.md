@@ -21,7 +21,27 @@ A [Fahrenheit](https://github.com/fahrenheit-crew/fahrenheit) mod for the Window
 
 ## What it does
 
-- Retains the existing fixed-rate corrections, with 60 Hz as the development target.
+The next architecture target preserves native gameplay timing and adds independent,
+interpolated field images. The fixed60 implementation remains a comparison baseline.
+`FFX_VRR_NATIVE_FIELD_REFERENCE=1` selects the first reference stage at process startup:
+it bypasses VRR configuration, retiming, input replay and independent-image installation,
+reads the guarded native limiter period, and records host update events using the existing
+bounded diagnostic recorder. Its clock runs only as an observation model. This mode does
+not produce extra images or prove animation interpolation. It leaves other loaded mods
+unchanged; use an explicitly recorded mod composition for comparisons.
+
+The private `FFX_VRR_NATIVE_FIELD_PROBE=1` test path uses an early Fahrenheit
+additional-image phase, the native limiter period and existing camera/actor adapters.
+It is restricted to room/event 60 at normal speed, with a 60 FPS presentation cap.
+Build its separate host overlay and mod with `build.cmd mod-field-pack --sdk official`.
+See [the playtest procedure](docs/native-field-playtest.md) before installing that
+private package. It deliberately stops the process if an already frozen additional
+pass loses a required safety condition. The first native probe produced zero additional
+images because startup incorrectly latched a speed refusal. The corrected build passes
+a native zero-delta startup check from a separate runtime directory; independent field
+presentation has not passed acceptance.
+
+- Retains the existing fixed60 corrections as a comparison baseline.
 - Contains experimental independent rendering, interpolation and flip presentation behind the qualification veto.
 - Reports requested and effective presentation separately; hook installation alone cannot enable the independent path.
 - Optional AV1 replacement movies up to 4K, see [docs/video-replacement.md](docs/video-replacement.md).
@@ -49,6 +69,9 @@ supported. High render FPS remain disabled until native validation is complete.
 ## Settings
 
 Open Fahrenheit's settings with **F7**.
+
+These rate settings describe the legacy comparison path. The explicit native-field
+diagnostic uses its bounded profile and native limiter period instead.
 
 | Setting | Default | Effect |
 | --- | --- | --- |

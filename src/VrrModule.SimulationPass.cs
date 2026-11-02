@@ -73,6 +73,7 @@ public unsafe sealed partial class VrrModule
         // case here.
         sample_frame_skip();
         if (_diagnostics?.IsCapturing == true) diagnostic_event("vblank_native", diagnostic_state());
+        if (_nativeFieldProbeEnabled) return;
 
         uint delta = FhUtil.get_at<uint>(EngineAddresses.SgVCount) - before;
         if (delta == 0) return;

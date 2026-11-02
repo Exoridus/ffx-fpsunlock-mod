@@ -3,6 +3,29 @@ using Xunit;
 
 public sealed class FixedSimulationClockTests
 {
+    [Fact]
+    public void Explicit_native_period_preserves_time_across_variable_image_intervals()
+    {
+        double period = 2 * 0.016683333333333333;
+        var clock = new FixedSimulationClock(stepSeconds: period);
+        int ticks = clock.Plan(0).Steps;
+        double now = 0;
+        double[] intervals = [1d / 75, 1d / 90, 1d / 110, 1d / 120];
+        for (int i = 0; i < 4000; i++) ticks += clock.Plan(now += intervals[i % intervals.Length]).Steps;
+        Assert.Equal(1 + (int)Math.Floor(now / period), ticks);
+        Assert.NotEqual(1 + (int)Math.Floor(now * 30), ticks);
+    }
+
+    [Fact]
+    public void Explicit_period_rejects_zero_and_negative_durations()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new FixedSimulationClock(stepSeconds: 0d));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new FixedSimulationClock(stepSeconds: -1d));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new FixedSimulationClock(stepSeconds: double.NaN));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new FixedSimulationClock(stepSeconds: double.PositiveInfinity));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new FixedSimulationClock(stepSeconds: 1e-12));
+    }
+
     public FixedSimulationClockTests() => RenderPassContext.IsActive = false;
 
     [Theory]

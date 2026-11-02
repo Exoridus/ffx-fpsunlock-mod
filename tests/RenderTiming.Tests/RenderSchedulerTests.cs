@@ -128,6 +128,42 @@ public sealed class RenderSchedulerCollection;
 
 public unsafe sealed partial class VrrModule
 {
+    internal bool NativeFieldEnvironmentReady = true;
+    private uint VSyncInterval { get; set; }
+    private bool native_field_environment_ready() => NativeFieldEnvironmentReady && !NativeSync && !NativeMovie;
+    private void native_field_abort(string reason) => throw new InvalidOperationException(reason);
+    private bool prepare_native_field_probe() => false;
+    internal void PrepareNativeField(double now, bool hostVerified = true)
+    {
+        _config = _config with { NativeFieldProbe = true };
+        ChosenRate = 30;
+        _nativeFieldStepSeconds = 0.03336666666666667;
+        _nativeFieldHostBound = true;
+        _nativeFieldHostOrderVerified = hostVerified;
+        PreparePass();
+        _render_input_delta = 1f / 30;
+        _simulationClock = new FixedSimulationClock(_nativeFieldStepSeconds);
+        _simulationClock.Plan(0);
+        _render_now = now;
+        _render_plan_pending = true;
+        native_field_prepare_pass();
+    }
+    internal bool NativeFieldHostClassify() => native_field_host_classify(_render_input_delta);
+    internal void NativeFieldHostBindingForTest(bool bound) => _nativeFieldHostBound = bound;
+    internal bool NativeFieldPresentation => RenderPassContext.IsPresentation;
+    internal void NativeFieldClock(float delta) => render_scheduler_clock(delta);
+    internal void NativeFieldPendingLatch() => _pad_latch_pending = true;
+    internal void NativeFieldSnapshotProducerState(bool duplicate)
+    {
+        _padSnapshotOwner = Environment.CurrentManagedThreadId;
+        _padSnapshotLoopDepth = 1;
+        _padSnapshotEpoch = RenderPassContext.HistoryEpoch;
+        _padSnapshotClockCompleted = true;
+        _padSnapshotSimulation = false;
+        _padSnapshotInvalid = !duplicate;
+        _padSnapshotReached = duplicate;
+        _padSnapshotProducerDepth = 0;
+    }
     public VrrModule() { bind_cooperative_ticks([]); _pad_latch_installed = _pad_history_readers_ready = true; SeedSyntheticSnapshotBaseline(); ArmSyntheticRuntimeForTest(); }
     private void ArmSyntheticRuntimeForTest()
     {
@@ -300,6 +336,7 @@ public unsafe sealed partial class VrrModule
 
 internal sealed partial record SchedulerConfig
 {
+    public bool NativeFieldProbe { get; init; }
     public int TargetFramerateOverride { get; init; }
     public bool VrrEnabled { get; init; } = true;
     public uint PresentInterval => 0;

@@ -435,7 +435,7 @@ internal sealed partial class HookRegistrationPlan
         error = null;
         if (!config.Present)
         { error = "Hook registration requires Present."; return false; }
-        if (independent && (!config.VBlankRate || !config.CharacterDelta || !config.ParticleTimeline))
+        if (independent && (!config.VBlankRate || (!config.NativeFieldProbe && !config.CharacterDelta) || !config.ParticleTimeline))
         { error = "Independent registration requires VBlankRate, CharacterDelta and ParticleTimeline."; return false; }
         var selections = new List<HookSelection>();
         foreach (HookSiteId site in Enum.GetValues<HookSiteId>().Where(HookSites.IsDeclared))

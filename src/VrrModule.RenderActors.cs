@@ -10,7 +10,7 @@ public unsafe sealed partial class VrrModule
     private readonly object _renderActorLock = new();
     private readonly Dictionary<long, RenderActorState> _renderActorStates = [];
     private readonly ThreadLocal<RenderActorDrawScope?> _renderActorDrawScope = new();
-    private bool _renderActorsBound;
+    private bool _renderActorsBound, _renderActorInterpolationDisabled;
     private long _renderActorLifetime, _renderActorGeneration, _renderActorResetGeneration;
     private ActorSimulationReceipt? _renderActorTick;
     private ActorImageReceipt? _renderActorLatestReceipt;
@@ -380,9 +380,10 @@ public unsafe sealed partial class VrrModule
             if (!render_actor_output_layout(instance, output, scope.State.Mesh, out int currentMatrices) || currentMatrices != matrices) return;
             var canonical = MemoryMarshal.Cast<byte, Matrix4x4>(raw);
             var receipt = scope.Receipt;
+            bool interpolate = receipt.Interpolate && !_renderActorInterpolationDisabled;
             if (receipt.Poses.TryGetValue((long)instance, out var cached))
             {
-                if (cached.Lifetime == current.Lifetime && RenderActorHistory.Equal(canonical, cached.Canonical) && receipt.Interpolate)
+                if (cached.Lifetime == current.Lifetime && RenderActorHistory.Equal(canonical, cached.Canonical) && interpolate)
                 { cached.Rendered.CopyTo(new Span<Matrix4x4>((void*)(output - 64), matrices)); scope.Blended = !ReferenceEquals(cached.Rendered, cached.Canonical); }
                 return;
             }
@@ -404,7 +405,7 @@ public unsafe sealed partial class VrrModule
             if (current.Current is not { } pose || !ReferenceEquals(pose.Tick, receipt.Tick)
                 || (!receipt.Simulation && !pose.Tick.Complete) || !RenderActorHistory.Equal(canonical, pose.Matrices)) return;
             Matrix4x4[] rendered = pose.Matrices;
-            if (receipt.Interpolate && float.IsFinite(receipt.Alpha) && current.Previous is { } prior && prior.Tick.Complete)
+            if (interpolate && float.IsFinite(receipt.Alpha) && current.Previous is { } prior && prior.Tick.Complete)
             {
                 var candidate = new Matrix4x4[matrices];
                 bool valid = true;
@@ -422,6 +423,8 @@ public unsafe sealed partial class VrrModule
             }
             else _renderActorSkipped++;
             receipt.Poses[(long)instance] = new(current.Lifetime, pose.Matrices, rendered);
+            native_field_trace_actor(receipt.Image.Serial, receipt.Tick.Serial, current.Lifetime, instance,
+                receipt.Alpha, receipt.Interpolate, pose.Matrices, rendered);
         }
     }
 }

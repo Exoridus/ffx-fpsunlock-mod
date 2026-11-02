@@ -123,6 +123,7 @@ public unsafe sealed partial class VrrModule
             return;
         }
 
+        if (native_field_additional_pass()) return;
         if (_padReplayLoan is not null || _padReplayRequested is not null)
         {
             lock (_padObservationGate) pad_replay_cancel("pad_replay_new_native_poll");
